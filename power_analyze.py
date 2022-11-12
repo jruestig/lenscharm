@@ -3,7 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import h5py
 import nifty8 as ift
+
 from os.path import join
+from sys import exit
 
 import jax.numpy as jnp
 import jax
@@ -12,20 +14,21 @@ from scipy.optimize import minimize
 
 space = cf.Space((1024,)*2, 1.)
 klcoords = space.klcoords
+box = cf.make_box(space.shape, (128,)*2, space.distances[0])
+
 
 powers =[]
 for ii in range(100):
     field = np.array(h5py.File(join('/home/jruestig/Data/angulo/tcm_clusters/', 'big_clusters_adj_{}.h5'.format(ii)))['data'])
 
-    ispace = ift.RGSpace((1024,)*2, 1.)
-    f = ift.makeField(ispace, field)
+    ispace = ift.RGSpace((128,)*2, 1.)
+    f = ift.makeField(ispace, field[box['slice']])
     FFT = ift.FFTOperator(ispace.get_default_codomain(), ispace)
     ff = FFT.adjoint(f)
     powers.append(ift.power_analyze(ff).val)
 
 
 d = jnp.array([np.log(p) for p in powers])
-
 x = np.log(np.arange(powers[0].shape[0])+1)
 
 
@@ -43,7 +46,6 @@ def f4(a, b, c, d, e, x):
 
 def fun(f, p):
     return jnp.sum((f(*p, x) - d)**2)
-
 
 
 fun1 = jax.jit(lambda p: fun(f1, p))
@@ -71,4 +73,5 @@ plt.plot(np.arange(powers[0].shape[0]), np.exp(f4(*sols[3]['x'], xn)), label='f4
 plt.legend()
 plt.loglog()
 plt.tight_layout()
-plt.savefig('plots/least_squares_ps')
+plt.show()
+#plt.savefig('plots/least_squares_ps')
