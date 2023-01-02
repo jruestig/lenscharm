@@ -1,11 +1,14 @@
 import cluster_fits as cf
 import nifty8 as ift
 import numpy as np
+import matplotlib.pyplot as plt
 
 from os.path import join
 from source_fwd import load_fits
 from functools import partial
 
+
+lensresolution = 0.01
 
 source = load_fits('/home/jruestig/Data/Thorsten_project/CII_sim/CII_sim/tmp_source.fits')
 d = load_fits('/home/jruestig/Data/Thorsten_project/CII_sim/CII_sim/glamer_ls_{}arcsec.fits'.format(lensresolution))
@@ -13,7 +16,6 @@ deflection_ = np.array((load_fits('/home/jruestig/Data/Thorsten_project/CII_sim/
                         load_fits('/home/jruestig/Data/Thorsten_project/CII_sim/CII_sim/alphay_clus.fits')))
 deflection_ *= cf.toarcsec
 
-lensresolution = 0.01
 
 d *= 1e9
 detectorspace = cf.Space(d.shape, lensresolution)
@@ -94,3 +96,20 @@ cf.save_as_csv(model.models(),
                prior_position=position.val,
                output=('/home/jruestig/pro/python/lensing/output/interbeginning', recname),
                )
+
+
+deflection_rec = np.zeros_like(deflection_)
+deflection_rec[:, mask] = model.deflection_point(
+    detectorspace.xycoords[:, mask],
+    prior(position).val
+)
+diff = np.zeros_like(deflection_)
+diff[:, mask] = deflection_[:, mask]
+diff = diff - deflection_rec
+
+fig, axes = plt.subplots(1, 3)
+axes[0].imshow(np.hypot(*deflection_))
+axes[1].imshow(np.hypot(*deflection_rec))
+axes[2].imshow(np.hypot(*diff))
+axes[2].contour(mask)
+plt.show()
