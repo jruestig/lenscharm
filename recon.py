@@ -56,13 +56,14 @@ def downsample(array, factor):
 redshift = 1.45
 sposition = np.array([-3.39658805,  3.39564086])
 
+modeldeflection = 'glamer'  # model, glamer
 
 noise_scale = 0.08
 source_resolution = 0.00022568588643953524
 # resolution = source_resolution  # reconstruction
 # resolution = 0.005
-resolution = 0.0025
-# resolution = source_resolution * 5
+resolution = 0.00125
+resolution = source_resolution * 5
 lensresolution = 0.005
 
 
@@ -173,6 +174,7 @@ space = cf.Space((pixels,)*2, resolution)
 isspace = ift.RGSpace((pixels,)*2, resolution)
 y = np.array((y[0]-extremum, y[1]-extremum))  # /(sspace.extent[1]*2)
 
+print('making source')
 tmpsource = SO(*cf.Space((int(np.ceil(sidelength/source_resolution)),)*2, source_resolution).xycoords, grid=False)
 ssource = downsample(
     tmpsource,
@@ -185,7 +187,7 @@ isource = ift.makeField(isspace, tmp)
 
 interpolator_glamer = ift.LinearInterpolator(isspace, np.array(y.reshape(2, -1)))
 
-if True:
+if modeldeflection == 'model':
     print('model deflection')
     alpham = model.deflection_point(detectorspace.xycoords[:, mask], recposition)
     betam = np.array(detectorspace.xycoords[:, mask] - alpham)
@@ -203,7 +205,7 @@ interpolator = ift.LinearInterpolator(isspace, np.array(ym.reshape(2, -1)))
 Trans = Transponator(isspace)
 
 
-newshape = 128
+newshape = 256
 field = np.zeros(detectorspace.shape)
 field[mask] = interpolator((isource)).val
 from source_fwd import save_fits
@@ -214,32 +216,35 @@ for ii, pix in enumerate(imagepixels):
             pix[0]-newshape//2:pix[0]+newshape//2] = True
 
     np.save(
-        './output/fields/glamer_{}_field_{}_sr{}_lr{}'.format(
-            lensresolution, ii, resolution, lensresolution),
+        './output/fields/npy/glamer_field{}_sr{}_lr{}'.format(
+            ii, resolution, lensresolution),
         d[masknew].reshape((newshape,)*2)
     )
     np.save(
-        './output/fields/interpolated_{}_field_{}_sr{}_lr{}'.format(
-            lensresolution, ii, resolution, lensresolution),
+        './output/fields/npy/interpolated_field{}_sr{}_lr{}'.format(
+            ii, resolution, lensresolution),
         field[masknew].reshape((newshape,)*2)
     )
+
     save_fits(
         d[masknew].reshape((newshape,)*2),
-        './output/fields/glamer_{}_field_{}_sr{}_lr{}'.format(
-            lensresolution, ii, resolution, lensresolution)
+        './output/fields/glamers/glamer_field{}_sr{}_lr{}'.format(
+            ii, resolution, lensresolution)
     )
     save_fits(
         field[masknew].reshape((newshape,)*2),
-        './output/fields/interpolated_{}_field_{}_sr{}_lr{}'.format(
-            lensresolution, ii, resolution, lensresolution)
+        './output/fields/interpolated/interpolated_field{}_sr{}_lr{}'.format(
+            ii, resolution, lensresolution)
     )
 
     fig, axes = plt.subplots(1, 3)
-    axes[0].imshow(d[masknew].reshape((newshape,)*2)+1, norm=LogNorm())
-    axes[1].imshow(field[masknew].reshape((newshape,)*2)+1, norm=LogNorm())
-    axes[2].imshow(
+    im0 = axes[0].imshow(d[masknew].reshape((newshape,)*2)+1, norm=LogNorm())
+    im1 = axes[1].imshow(field[masknew].reshape((newshape,)*2)+1, norm=LogNorm())
+    im2 = axes[2].imshow(
         d[masknew].reshape((newshape,)*2)+1-field[masknew].reshape((newshape,)*2)+1,
         norm=LogNorm())
+    for im, ax in zip([im0, im1, im2], axes):
+        plt.colorbar(im, ax=ax)
     plt.show()
 
 exit()
