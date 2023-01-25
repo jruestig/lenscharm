@@ -18,7 +18,6 @@ import sys
 from sys import exit
 
 
-
 #TODO:
 # - higher source variability  DONE
 # - Blurring  - check against no blurring check DONE
