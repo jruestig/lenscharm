@@ -76,7 +76,7 @@ clusterlist = list(cluster_sources.keys()); clusterlist.sort()
 
 ii = int(sys.argv[-1])
 
-cluster = 'bacco_3'
+cluster = 'bacco_1'
 sources = cluster_sources[cluster]
 source = sources[ii]
 
@@ -152,11 +152,11 @@ beta = np.array(detectorspace.xycoords[:, xslice, yslice] - alpha)
 # beta[1] = beta[1] - source['position'][1]
 # y = beta[:, source['mask'][xslice, yslice]]
 y = beta.reshape(2, -1)
-# y = y - spos.reshape(2, 1)[::-1]
+y = y - spos.reshape(2, 1)[::-1]
 
 
 # Defining domains & operators
-if False:
+if True:
     extremum = np.max((np.abs(y.min()), np.abs(y.max()))) + resolution
     sidelength = 2 * extremum
     pixels = int(np.ceil(sidelength/resolution))
