@@ -90,12 +90,13 @@ noise_scale = 0.08
 source_resolution = 0.04
 resolution = 0.04  # reconstruction
 
+dataname = 'data_0.08_slacs'
 lenspath = join(
     '/home/jruestig/pro/python/source_fwd/',
-    source['data_0.08_slacs']['path'],
-    'lens_data_0.08_slacs.data'
+    source[dataname]['path'],
 )
-position, subsxy0, (mainlenses, _) = lens_to_params(lenspath)
+position, subsxy0, (mainlenses, _) = lens_to_params(
+    join(lenspath, 'lens_{}.data'.format(dataname)))
 
 dpie = cf.dPIE(detectorspace, domainkeys=[ii for ii in range(mainlenses)])
 fcnfw = cf.CircularNfw(detectorspace, xy0=subsxy0, fixed=True)
@@ -117,6 +118,14 @@ xmaxarg, ymaxarg, xminarg, yminarg = [
 ]
 yslice, xslice = slice(xminarg, xmaxarg), slice(yminarg, ymaxarg)
 
+sim_reconstruction = load_fits(
+    join(lenspath, 'best_{}_source.fits'.format(dataname))
+)[0]
+maxind = np.unravel_index(
+    np.argmax(sim_reconstruction, axis=None),
+    sim_reconstruction.shape
+)
+spos = cf.Space(sim_reconstruction.shape, 0.04).xycoords[0, 0, maxind]
 
 if False:
     simulation, clusternumber = cluster.split('_')
@@ -143,27 +152,24 @@ beta = np.array(detectorspace.xycoords[:, xslice, yslice] - alpha)
 # beta[1] = beta[1] - source['position'][1]
 # y = beta[:, source['mask'][xslice, yslice]]
 y = beta.reshape(2, -1)
+# y = y - spos.reshape(2, 1)[::-1]
 
-extremum = np.max((np.abs(y.min()), np.abs(y.max()))) + resolution
-sidelength = 2 * extremum
-pixels = int(np.ceil(sidelength/resolution))
-print(pixels)
-y = np.array((y[0]-extremum, y[1]-extremum))  # /(sspace.extent[1]*2)
 
 # Defining domains & operators
-sspace = cf.Space((pixels,)*2, resolution)
-isspace = ift.RGSpace((pixels,)*2, resolution)
-interpolator = ift.LinearInterpolator(isspace, array(y))
+if False:
+    extremum = np.max((np.abs(y.min()), np.abs(y.max()))) + resolution
+    sidelength = 2 * extremum
+    pixels = int(np.ceil(sidelength/resolution))
+    print(pixels)
+    y = np.array((y[0]-extremum, y[1]-extremum))  # /(sspace.extent[1]*2)
+    isspace = ift.RGSpace((pixels,)*2, resolution)
+    interpolator = ift.LinearInterpolator(isspace, array(y))
+else:
+    isspace = ift.RGSpace((512,)*2, resolution)
+    ynew = y + np.multiply(isspace.shape, isspace.distances).reshape(2, 1)/2
+    interpolator = ift.LinearInterpolator(isspace, array(ynew), cast_to_zero=True)
+
 Trans = Transponator(isspace)
-
-
-S = RectBivariateSpline(
-        cf.Space(source['source'].shape, source_resolution).xycoords[1, :, 0],
-        cf.Space(source['source'].shape, source_resolution).xycoords[0, 0, :],
-        source['source'])
-
-gsource = S(*sspace.xycoords, grid=False)
-isource = ift.makeField(isspace, gsource)
 
 
 dataname = 'data_{}_{}'.format(
@@ -189,6 +195,8 @@ psf = load_fits(cfg['detector']['path_to_psf'])[:-1, :]
 # B = lambda x: Blurring(x, psf[11:20, 11:20])
 B = lambda x: Blurring(x, psf)
 BB = ift.JaxLinearOperator(dspace, dspace, B, domain_dtype=float)
+BB = ift.DiagonalOperator(
+    ift.Field.from_raw(dspace, 1.), sampling_dtype=float)
 Re = Reshaper(interpolator.target, dspace)
 data = ift.makeField(dspace, d)
 
@@ -212,7 +220,7 @@ data_space = R.target
 N = ift.ScalingOperator(data_space, noise_scale**2, sampling_dtype=float)
 D_inv = R.adjoint @ N.inverse @ R + S.inverse
 j = R.adjoint_times(N.inverse_times(data))
-IC = ift.GradientNormController(iteration_limit=600, tol_abs_gradnorm=1e-3)
+IC = ift.GradientNormController(iteration_limit=100, tol_abs_gradnorm=1e-3)
 D = ift.InversionEnabler(D_inv, IC, approximation=S.inverse).inverse
 m = D(j)
 
@@ -254,10 +262,6 @@ source_reconstruction = np.roll(
 
 fig, axes = plt.subplots(2, 3, figsize=(19, 10))
 ims = np.zeros_like(axes)
-# ims[0, 0] = axes[0, 0].imshow(isource.val, origin='lower')
-# ims[0, 1] = axes[0, 1].imshow(HT(m).val.T, origin='lower')
-# ims[0, 2] = axes[0, 2].imshow(
-#     isource.val-HT(m).val.T, origin='lower', cmap='RdBu_r')
 ims[0, 0] = axes[0, 0].imshow(source['source'], vmin=-0.1, vmax=1.0, origin='lower')
 ims[0, 1] = axes[0, 1].imshow(source_reconstruction, vmin=-0.1, vmax=1.0, origin='lower')
 ims[0, 2] = axes[0, 2].imshow(
@@ -276,7 +280,6 @@ for im, ax in zip(ims.flatten(), axes.flatten()):
     plt.colorbar(im, ax=ax)
 plt.tight_layout()
 plt.show()
-
 
 args = {
     'offset_mean': 0,
@@ -318,12 +321,12 @@ for i in range(6):
             N_samples = 12
 
         print(i, 'Samples:{}'.format(N_samples))
-
         ic_newton = ift.AbsDeltaEnergyController(
             name='Newton {}'.format(i), deltaE=1e-6, convergence_level=1, iteration_limit=20)
         minimizer = ift.NewtonCG(ic_newton)
         KL = ift.SampledKLEnergy(mean, H, N_samples, minimizer_sampling, mirror_samples=True)
     else:
+        print(i, 'Samples:{}'.format(N_samples))
         KL = ift.SampledKLEnergy(mean, H, N_samples, None, mirror_samples=True)
 
     # Draw new samples and minimize KL
@@ -335,7 +338,7 @@ for i in range(6):
     # rec = correlated_field(mean).val
     rec = nmean.val
     source_reconstruction = np.zeros_like(rec)
-    source_reconstruction[rec <= 10] = rec[rec < 120]
+    # source_reconstruction[rec < 10] = rec[rec < 10]
     source_var = var.val
 
     maxi = 120
@@ -366,28 +369,28 @@ for i in range(6):
 
     field = BB(Re(interpolator(Trans(nmean)))).val
 
-    # fig, axes = plt.subplots(2, 3, figsize=(19, 10))
-    # ims = np.zeros_like(axes)
-    # ims[0, 0] = axes[0, 0].imshow(
-    #     source['source'], origin='lower', vmin=0.0, vmax=1.0)
-    # ims[0, 1] = axes[0, 1].imshow(
-    #     source_reconstruction, origin='lower', vmin=0.0, vmax=1.0)
-    # ims[0, 2] = axes[0, 2].imshow(
-    #     source['source']-source_reconstruction, origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3)
-    # ims[1, 0] = axes[1, 0].imshow(d, **imargs, vmin=-0.10, vmax=0.8)
-    # ims[1, 1] = axes[1, 1].imshow(field, **imargs, vmin=-0.10, vmax=0.8)
-    # ims[1, 2] = axes[1, 2].imshow((d-field)/noise_scale, **imargs, cmap='RdBu_r', vmin=-3, vmax=3)
-    # # axes[1, 2].contour(field > 0.1, **imargs, level=['white'])
-    # axes[0, 0].set_title('source')
-    # axes[0, 1].set_title('rec')
-    # axes[0, 2].set_title('source - rec')
-    # axes[1, 0].set_title('data')
-    # axes[1, 1].set_title('BLs')
-    # axes[1, 2].set_title('(data - BLs)/noisescale')
-    # for im, ax in zip(ims.flatten(), axes.flatten()):
-    #     plt.colorbar(im, ax=ax)
-    # plt.tight_layout()
-    # plt.show()
+    fig, axes = plt.subplots(2, 3, figsize=(19, 10))
+    ims = np.zeros_like(axes)
+    ims[0, 0] = axes[0, 0].imshow(
+        source['source'], origin='lower', vmin=0.0, vmax=1.0)
+    ims[0, 1] = axes[0, 1].imshow(
+        source_reconstruction, origin='lower', vmin=0.0, vmax=1.0)
+    ims[0, 2] = axes[0, 2].imshow(
+        source['source']-source_reconstruction, origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3)
+    ims[1, 0] = axes[1, 0].imshow(d, **imargs, vmin=-0.10, vmax=0.8)
+    ims[1, 1] = axes[1, 1].imshow(field, **imargs, vmin=-0.10, vmax=0.8)
+    ims[1, 2] = axes[1, 2].imshow((d-field)/noise_scale, **imargs, cmap='RdBu_r', vmin=-3, vmax=3)
+    # axes[1, 2].contour(field > 0.1, **imargs, level=['white'])
+    axes[0, 0].set_title('source')
+    axes[0, 1].set_title('rec')
+    axes[0, 2].set_title('source - rec')
+    axes[1, 0].set_title('data')
+    axes[1, 1].set_title('BLs')
+    axes[1, 2].set_title('(data - BLs)/noisescale')
+    for im, ax in zip(ims.flatten(), axes.flatten()):
+        plt.colorbar(im, ax=ax)
+    plt.tight_layout()
+    plt.show()
 
 np.save(
     join('/home/jruestig/pro/python/lensing/',
