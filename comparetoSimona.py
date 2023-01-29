@@ -76,7 +76,7 @@ clusterlist = list(cluster_sources.keys()); clusterlist.sort()
 
 ii = int(sys.argv[-1])
 
-cluster = 'bacco_3'
+cluster = 'bacco_1'
 sources = cluster_sources[cluster]
 source = sources[ii]
 
@@ -212,7 +212,7 @@ data_space = R.target
 N = ift.ScalingOperator(data_space, noise_scale**2, sampling_dtype=float)
 D_inv = R.adjoint @ N.inverse @ R + S.inverse
 j = R.adjoint_times(N.inverse_times(data))
-IC = ift.GradientNormController(iteration_limit=600, tol_abs_gradnorm=1e-3)
+IC = ift.GradientNormController(iteration_limit=100, tol_abs_gradnorm=1e-3)
 D = ift.InversionEnabler(D_inv, IC, approximation=S.inverse).inverse
 m = D(j)
 
@@ -252,31 +252,31 @@ source_reconstruction = np.roll(
 #     -shifty, axis=1)
 
 
-fig, axes = plt.subplots(2, 3, figsize=(19, 10))
-ims = np.zeros_like(axes)
-# ims[0, 0] = axes[0, 0].imshow(isource.val, origin='lower')
-# ims[0, 1] = axes[0, 1].imshow(HT(m).val.T, origin='lower')
+# fig, axes = plt.subplots(2, 3, figsize=(19, 10))
+# ims = np.zeros_like(axes)
+# # ims[0, 0] = axes[0, 0].imshow(isource.val, origin='lower')
+# # ims[0, 1] = axes[0, 1].imshow(HT(m).val.T, origin='lower')
+# # ims[0, 2] = axes[0, 2].imshow(
+# #     isource.val-HT(m).val.T, origin='lower', cmap='RdBu_r')
+# ims[0, 0] = axes[0, 0].imshow(source['source'], vmin=-0.1, vmax=1.0, origin='lower')
+# ims[0, 1] = axes[0, 1].imshow(source_reconstruction, vmin=-0.1, vmax=1.0, origin='lower')
 # ims[0, 2] = axes[0, 2].imshow(
-#     isource.val-HT(m).val.T, origin='lower', cmap='RdBu_r')
-ims[0, 0] = axes[0, 0].imshow(source['source'], vmin=-0.1, vmax=1.0, origin='lower')
-ims[0, 1] = axes[0, 1].imshow(source_reconstruction, vmin=-0.1, vmax=1.0, origin='lower')
-ims[0, 2] = axes[0, 2].imshow(
-    source['source']-source_reconstruction, origin='lower', vmin=-0.3, vmax=0.3, cmap='RdBu_r')
-ims[1, 0] = axes[1, 0].imshow(d, **imargs, vmin=-0.10, vmax=0.8)
-ims[1, 1] = axes[1, 1].imshow(field, **imargs, vmin=-0.10, vmax=0.8)
-ims[1, 2] = axes[1, 2].imshow(
-    (d-field)/noise_scale, **imargs, cmap='RdBu_r', vmin=-3.0, vmax=3.0)
-axes[0, 0].set_title('source')
-axes[0, 1].set_title('rec')
-axes[0, 2].set_title('source - rec')
-axes[1, 0].set_title('data')
-axes[1, 1].set_title('BLs')
-axes[1, 2].set_title('(data - BLs)/noisescale')
-for im, ax in zip(ims.flatten(), axes.flatten()):
-    plt.colorbar(im, ax=ax)
-plt.tight_layout()
-plt.show()
-
+#     source['source']-source_reconstruction, origin='lower', vmin=-0.3, vmax=0.3, cmap='RdBu_r')
+# ims[1, 0] = axes[1, 0].imshow(d, **imargs, vmin=-0.10, vmax=0.8)
+# ims[1, 1] = axes[1, 1].imshow(field, **imargs, vmin=-0.10, vmax=0.8)
+# ims[1, 2] = axes[1, 2].imshow(
+#     (d-field)/noise_scale, **imargs, cmap='RdBu_r', vmin=-3.0, vmax=3.0)
+# axes[0, 0].set_title('source')
+# axes[0, 1].set_title('rec')
+# axes[0, 2].set_title('source - rec')
+# axes[1, 0].set_title('data')
+# axes[1, 1].set_title('BLs')
+# axes[1, 2].set_title('(data - BLs)/noisescale')
+# for im, ax in zip(ims.flatten(), axes.flatten()):
+#     plt.colorbar(im, ax=ax)
+# plt.tight_layout()
+# plt.show()
+# 
 
 args = {
     'offset_mean': 0,
@@ -335,7 +335,7 @@ for i in range(6):
     # rec = correlated_field(mean).val
     rec = nmean.val
     source_reconstruction = np.zeros_like(rec)
-    source_reconstruction[rec <= 10] = rec[rec < 120]
+    source_reconstruction[rec < 120] = rec[rec < 120]
     source_var = var.val
 
     maxi = 120
@@ -366,28 +366,28 @@ for i in range(6):
 
     field = BB(Re(interpolator(Trans(nmean)))).val
 
-    # fig, axes = plt.subplots(2, 3, figsize=(19, 10))
-    # ims = np.zeros_like(axes)
-    # ims[0, 0] = axes[0, 0].imshow(
-    #     source['source'], origin='lower', vmin=0.0, vmax=1.0)
-    # ims[0, 1] = axes[0, 1].imshow(
-    #     source_reconstruction, origin='lower', vmin=0.0, vmax=1.0)
-    # ims[0, 2] = axes[0, 2].imshow(
-    #     source['source']-source_reconstruction, origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3)
-    # ims[1, 0] = axes[1, 0].imshow(d, **imargs, vmin=-0.10, vmax=0.8)
-    # ims[1, 1] = axes[1, 1].imshow(field, **imargs, vmin=-0.10, vmax=0.8)
-    # ims[1, 2] = axes[1, 2].imshow((d-field)/noise_scale, **imargs, cmap='RdBu_r', vmin=-3, vmax=3)
-    # # axes[1, 2].contour(field > 0.1, **imargs, level=['white'])
-    # axes[0, 0].set_title('source')
-    # axes[0, 1].set_title('rec')
-    # axes[0, 2].set_title('source - rec')
-    # axes[1, 0].set_title('data')
-    # axes[1, 1].set_title('BLs')
-    # axes[1, 2].set_title('(data - BLs)/noisescale')
-    # for im, ax in zip(ims.flatten(), axes.flatten()):
-    #     plt.colorbar(im, ax=ax)
-    # plt.tight_layout()
-    # plt.show()
+    fig, axes = plt.subplots(2, 3, figsize=(19, 10))
+    ims = np.zeros_like(axes)
+    ims[0, 0] = axes[0, 0].imshow(
+        source['source'], origin='lower', vmin=0.0, vmax=1.0)
+    ims[0, 1] = axes[0, 1].imshow(
+        source_reconstruction, origin='lower', vmin=0.0, vmax=1.0)
+    ims[0, 2] = axes[0, 2].imshow(
+        source['source']-source_reconstruction, origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3)
+    ims[1, 0] = axes[1, 0].imshow(d, **imargs, vmin=-0.10, vmax=0.8)
+    ims[1, 1] = axes[1, 1].imshow(field, **imargs, vmin=-0.10, vmax=0.8)
+    ims[1, 2] = axes[1, 2].imshow((d-field)/noise_scale, **imargs, cmap='RdBu_r', vmin=-3, vmax=3)
+    # axes[1, 2].contour(field > 0.1, **imargs, level=['white'])
+    axes[0, 0].set_title('source')
+    axes[0, 1].set_title('rec')
+    axes[0, 2].set_title('source - rec')
+    axes[1, 0].set_title('data')
+    axes[1, 1].set_title('BLs')
+    axes[1, 2].set_title('(data - BLs)/noisescale')
+    for im, ax in zip(ims.flatten(), axes.flatten()):
+        plt.colorbar(im, ax=ax)
+    plt.tight_layout()
+    plt.show()
 
 np.save(
     join('/home/jruestig/pro/python/lensing/',
