@@ -184,44 +184,26 @@ data = ift.makeField(dspace, d)
 data = fullmodel(priorpostrue)
 data = ift.makeField(dspace, data.val+noise)
 
-ic_sampling = ift.AbsDeltaEnergyController(deltaE=0.5, iteration_limit=500)
-ic_newton = ift.AbsDeltaEnergyController(name='Newton', deltaE=0.05, convergence_level=1) #, iteration_limit=20)
-minimizer = ift.NewtonCG(ic_newton)
-ic_sampling_nl = ift.AbsDeltaEnergyController(deltaE=0.5, iteration_limit=50, convergence_level=2)
-minimizer_sampling = ift.NewtonCG(ic_sampling_nl)
 
 N = ift.ScalingOperator(dspace, noise_scale**2, sampling_dtype=float)
 
 likelihood_energy = (
     ift.GaussianEnergy(data=data, inverse_covariance=N.inverse) @ fullmodel
 )
-H = ift.StandardHamiltonian(likelihood_energy, ic_sampling)
 
-mean = ift.full(H.domain, 0.)
 
 N_samples = 5
+global_iterations = 10
+
+ic_sampling = ift.AbsDeltaEnergyController(name='linear', deltaE=0.1, iteration_limit=50)
+ic_newton = ift.AbsDeltaEnergyController(name='Newton', deltaE=0.1, iteration_limit=20)
+minimizer = ift.NewtonCG(ic_newton)
+ic_sampling_nl = ift.AbsDeltaEnergyController(name='nonlinear', deltaE=0.5, iteration_limit=10)
+minimizer_sampling = ift.NewtonCG(ic_sampling_nl)
 
 
-print('create KL')
-for ii in range(7):
-    # if ii <= 2:
-    if ii <= 2:
-        ic_sampling_nl = ift.AbsDeltaEnergyController(deltaE=0.5, iteration_limit=50, convergence_level=2)
-        minimizer_sampling = ift.NewtonCG(ic_sampling_nl)
-        ic_newton = ift.AbsDeltaEnergyController(name='Newton', deltaE=0.1, convergence_level=1) #, iteration_limit=20)
-        minimizer = ift.NewtonCG(ic_newton)
-    else:
-        ic_sampling_nl = ift.AbsDeltaEnergyController(deltaE=0.5, iteration_limit=100, convergence_level=2)
-        minimizer_sampling = ift.NewtonCG(ic_sampling_nl)
-        ic_newton = ift.AbsDeltaEnergyController(name='Newton', deltaE=0.0005, convergence_level=1) #, iteration_limit=20)
-        minimizer = ift.NewtonCG(ic_newton)
-
-    KL = ift.SampledKLEnergy(mean, H, N_samples, minimizer_sampling, mirror_samples=True)
-
-    KL, conve = minimizer(KL)
-    mean = KL.position
-
-    nmean, var = KL.samples.sample_stat(diffuse)
+def plot_check(samples_list, ii):
+    mean, var = samples_list.sample_stat()
 
     for key, val in lprior.force(mean).val.items():
         print(key, postrue.val[key][0], val[0], sep='\t')
@@ -251,13 +233,37 @@ for ii in range(7):
     for im, ax in zip(ims.flatten(), axes.flatten()):
         plt.colorbar(im, ax=ax)
     plt.tight_layout()
-    plt.savefig(f'output/bla/gauss_diffnoise_KL_{ii}.png')
+    plt.savefig(f'output/bla/gauss_diff2_KL_{ii}.png')
     plt.close()
 
-defltrue = dpie.deflection_field(postrue)
-deflreco = dpie.deflection_field(lprior.force(mean).val)
-f, axs = plt.subplots(1, 3)
-axs[0].imshow(np.hypot(*defltrue))
-axs[1].imshow(np.hypot(*deflreco))
-axs[2].imshow(np.hypot(*(defltrue-deflreco)))
-plt.show()
+
+def Nsamples(iteration):
+    if iteration < 3:
+        return 5
+    else:
+        return 8
+
+samples = ift.optimize_kl(
+    likelihood_energy,
+    global_iterations,
+    Nsamples,
+    minimizer,
+    ic_sampling,
+    minimizer_sampling,
+    output_directory='output/bla/second',
+    inspect_callback=plot_check,
+    dry_run=False,
+)
+
+# defltrue = dpie.deflection_field(postrue)
+# deflreco = dpie.deflection_field(lprior.force(mean).val)
+# f, axs = plt.subplots(1, 3)
+# axs[0].imshow(np.hypot(*defltrue))
+# axs[1].imshow(np.hypot(*deflreco))
+# axs[2].imshow(np.hypot(*(defltrue-deflreco)))
+# plt.show()
+
+for key, val in lprior.force(mean).val.items():
+    print(key, postrue.val[key][0], val[0], sep='\t')
+for key, val in sprior.force(mean).val.items():
+    print(key, postrue.val[key][0], val[0], sep='\t')
