@@ -13,6 +13,7 @@ from image_positions.image_positions import Interpolator
 from scipy.interpolate import RectBivariateSpline
 from os.path import join, exists
 
+
 import cluster_fits as cf
 import yaml
 import sys
@@ -76,7 +77,7 @@ clusterlist = list(cluster_sources.keys()); clusterlist.sort()
 
 ii = int(sys.argv[-1])
 
-cluster = 'bacco_1'
+cluster = 'bacco_29'
 sources = cluster_sources[cluster]
 source = sources[ii]
 
@@ -152,11 +153,10 @@ beta = np.array(detectorspace.xycoords[:, xslice, yslice] - alpha)
 # beta[1] = beta[1] - source['position'][1]
 # y = beta[:, source['mask'][xslice, yslice]]
 y = beta.reshape(2, -1)
-y = y - spos.reshape(2, 1)[::-1]
 
 
 # Defining domains & operators
-if True:
+if False:
     extremum = np.max((np.abs(y.min()), np.abs(y.max()))) + resolution
     sidelength = 2 * extremum
     pixels = int(np.ceil(sidelength/resolution))
@@ -165,6 +165,7 @@ if True:
     isspace = ift.RGSpace((pixels,)*2, resolution)
     interpolator = ift.LinearInterpolator(isspace, array(y))
 else:
+    y = y - spos.reshape(2, 1)[::-1]
     isspace = ift.RGSpace((512,)*2, resolution)
     ynew = y + np.multiply(isspace.shape, isspace.distances).reshape(2, 1)/2
     interpolator = ift.LinearInterpolator(isspace, array(ynew), cast_to_zero=True)
@@ -202,7 +203,7 @@ data = ift.makeField(dspace, d)
 
 
 def power_spectrum(k):
-    return 1000/(0.01+k)**3
+    return 100/(0.01+k)**4
 
 
 imargs = {'extent': (xmin, xmax, ymin, ymax), 'origin': 'lower'}
@@ -214,72 +215,72 @@ prior_correlation_structure = PD(ift.PS_field(power_space, power_spectrum))
 S = ift.DiagonalOperator(prior_correlation_structure)
 
 R = BB @ Re @ interpolator @ Trans @ HT
-
-print('start rec')
 data_space = R.target
 N = ift.ScalingOperator(data_space, noise_scale**2, sampling_dtype=float)
-D_inv = R.adjoint @ N.inverse @ R + S.inverse
-j = R.adjoint_times(N.inverse_times(data))
-IC = ift.GradientNormController(iteration_limit=100, tol_abs_gradnorm=1e-3)
-D = ift.InversionEnabler(D_inv, IC, approximation=S.inverse).inverse
-m = D(j)
 
-field = interpolator(Trans(HT(m))).val
-field = B(field.reshape(d.shape))
+if True:
+    print('start rec')
+    D_inv = R.adjoint @ N.inverse @ R + S.inverse
+    j = R.adjoint_times(N.inverse_times(data))
+    IC = ift.GradientNormController(iteration_limit=100, tol_abs_gradnorm=1e-3)
+    D = ift.InversionEnabler(D_inv, IC, approximation=S.inverse).inverse
+    m = D(j)
 
+    field = interpolator(Trans(HT(m))).val
+    field = B(field.reshape(d.shape))
 
-source_reconstruction = HT(m).val
-maxi = 120
-maxind = np.unravel_index(
-    np.argmax(source_reconstruction, axis=None),
-    source_reconstruction.shape
-)
+    source_reconstruction = HT(m).val
+    maxi = 120
+    maxind = np.unravel_index(
+        np.argmax(source_reconstruction, axis=None),
+        source_reconstruction.shape
+    )
 
-slicer = slice(maxi//2, (maxi*3)//2)
-# source_real = np.zeros((maxi*2,)*2)
-# source_real[slicer, slicer] = source['source']
-source_real = source['source']
-_, shiftx, shifty = get_shift(
-    source_real,
-    source_reconstruction[maxind[0]-maxi:maxind[0]+maxi,
-                          maxind[1]-maxi:maxind[1]+maxi],
-    10
-)
-source_reconstruction = np.roll(
-    np.roll(source_reconstruction[maxind[0]-maxi:maxind[0]+maxi,
-                                  maxind[1]-maxi:maxind[1]+maxi],
-            -shiftx, axis=0),
-    -shifty, axis=1)
+    slicer = slice(maxi//2, (maxi*3)//2)
+    # source_real = np.zeros((maxi*2,)*2)
+    # source_real[slicer, slicer] = source['source']
+    source_real = source['source']
+    _, shiftx, shifty = get_shift(
+        source_real,
+        source_reconstruction[maxind[0]-maxi:maxind[0]+maxi,
+                              maxind[1]-maxi:maxind[1]+maxi],
+        10
+    )
+    source_reconstruction = np.roll(
+        np.roll(source_reconstruction[maxind[0]-maxi:maxind[0]+maxi,
+                                      maxind[1]-maxi:maxind[1]+maxi],
+                -shiftx, axis=0),
+        -shifty, axis=1)
 
-# var = D(ift.full(D.domain, 1.))
-# source_var = HT(var).val
-# source_var = np.roll(
-#     np.roll(source_var[maxind[0]-maxi:maxind[0]+maxi,
-#                        maxind[1]-maxi:maxind[1]+maxi],
-#             -shiftx, axis=0),
-#     -shifty, axis=1)
+    # var = D(ift.full(D.domain, 1.))
+    # source_var = HT(var).val
+    # source_var = np.roll(
+    #     np.roll(source_var[maxind[0]-maxi:maxind[0]+maxi,
+    #                        maxind[1]-maxi:maxind[1]+maxi],
+    #             -shiftx, axis=0),
+    #     -shifty, axis=1)
 
+    fig, axes = plt.subplots(2, 3, figsize=(19, 10))
+    ims = np.zeros_like(axes)
+    ims[0, 0] = axes[0, 0].imshow(source['source'], vmin=-0.1, vmax=1.0, origin='lower')
+    ims[0, 1] = axes[0, 1].imshow(source_reconstruction, vmin=-0.1, vmax=1.0, origin='lower')
+    ims[0, 2] = axes[0, 2].imshow(
+        source['source']-source_reconstruction, origin='lower', vmin=-0.3, vmax=0.3, cmap='RdBu_r')
+    ims[1, 0] = axes[1, 0].imshow(d, **imargs, vmin=-0.10, vmax=0.8)
+    ims[1, 1] = axes[1, 1].imshow(field, **imargs, vmin=-0.10, vmax=0.8)
+    ims[1, 2] = axes[1, 2].imshow(
+        (d-field)/noise_scale, **imargs, cmap='RdBu_r', vmin=-3.0, vmax=3.0)
+    axes[0, 0].set_title('source')
+    axes[0, 1].set_title('rec')
+    axes[0, 2].set_title('source - rec')
+    axes[1, 0].set_title('data')
+    axes[1, 1].set_title('BLs')
+    axes[1, 2].set_title('(data - BLs)/noisescale')
+    for im, ax in zip(ims.flatten(), axes.flatten()):
+        plt.colorbar(im, ax=ax)
+    plt.tight_layout()
+    plt.show()
 
-fig, axes = plt.subplots(2, 3, figsize=(19, 10))
-ims = np.zeros_like(axes)
-ims[0, 0] = axes[0, 0].imshow(source['source'], vmin=-0.1, vmax=1.0, origin='lower')
-ims[0, 1] = axes[0, 1].imshow(source_reconstruction, vmin=-0.1, vmax=1.0, origin='lower')
-ims[0, 2] = axes[0, 2].imshow(
-    source['source']-source_reconstruction, origin='lower', vmin=-0.3, vmax=0.3, cmap='RdBu_r')
-ims[1, 0] = axes[1, 0].imshow(d, **imargs, vmin=-0.10, vmax=0.8)
-ims[1, 1] = axes[1, 1].imshow(field, **imargs, vmin=-0.10, vmax=0.8)
-ims[1, 2] = axes[1, 2].imshow(
-    (d-field)/noise_scale, **imargs, cmap='RdBu_r', vmin=-3.0, vmax=3.0)
-axes[0, 0].set_title('source')
-axes[0, 1].set_title('rec')
-axes[0, 2].set_title('source - rec')
-axes[1, 0].set_title('data')
-axes[1, 1].set_title('BLs')
-axes[1, 2].set_title('(data - BLs)/noisescale')
-for im, ax in zip(ims.flatten(), axes.flatten()):
-    plt.colorbar(im, ax=ax)
-plt.tight_layout()
-plt.show()
 
 args = {
     'offset_mean': 0,
@@ -293,7 +294,6 @@ args = {
     # How ragged the integrated Wiener process component is
     'asperity': (0.1, 0.5)  # 0.1, 0.5
 }
-
 correlated_field = ift.exp(ift.SimpleCorrelatedField(isspace, **args))
 
 ic_sampling = ift.AbsDeltaEnergyController(deltaE=0.5, iteration_limit=500)
@@ -307,18 +307,65 @@ likelihood_energy = (
     ift.GaussianEnergy(data=data, inverse_covariance=N.inverse) @ BB @ Re @ interpolator @ Trans @ correlated_field
 )
 H = ift.StandardHamiltonian(likelihood_energy, ic_sampling)
-initial_mean = ift.from_random(H.domain, 'normal')
-mean = initial_mean
+
+
+try:
+    mean = np.load(
+        join('/home/jruestig/pro/python/lensing/',
+             source[dataname]['path'] + "_KLposition.npy"),
+        allow_pickle=True
+    ).item()
+    mean = ift.MultiField.from_raw(H.domain, mean)
+    redo = True
+    iteration = 3
+
+    # rec = correlated_field(mean).val
+    # source_reconstruction = np.zeros_like(rec)
+    # source_reconstruction[rec < 120] = rec[rec < 120]
+    # maxi = 120
+    # slicer = slice(maxi//2, (maxi*3)//2)
+    # source_real = source['source']
+    # _, shiftx, shifty = get_shift(
+    #     source_real,
+    #     source_reconstruction[maxind[0]-maxi:maxind[0]+maxi,
+    #                           maxind[1]-maxi:maxind[1]+maxi],
+    #     10
+    # )
+    # source_reconstruction = np.roll(
+    #     np.roll(source_reconstruction[maxind[0]-maxi:maxind[0]+maxi,
+    #                                   maxind[1]-maxi:maxind[1]+maxi],
+    #             -shiftx, axis=0),
+    #     -shifty, axis=1)
+
+    # save_fits(
+    #     source_reconstruction,
+    #     join('/home/jruestig/pro/python/lensing/',
+    #         source[dataname]['path'] + "source.fits")
+    # )
+    # save_fits(
+    #     source_reconstruction,
+    #     join('/home/jruestig/pro/python/source_fwd/',
+    #         source['data_0.08_slacs']['path'],
+    #         'nonlinear_source.fits')
+    # )
+    # exit()
+
+except FileNotFoundError:
+    print('Not previously reconstructed')
+    mean = ift.from_random(H.domain, 'normal')
+    redo = False
+    iteration = 6
+
 
 N_samples = 5
 # Draw new samples to approximate the KL six times
-for i in range(6):
+for i in range(iteration):
+    if redo:
+        i += 5
 
     if i >= 2:
         if i > 5:
             N_samples = 7
-        elif i == 9:
-            N_samples = 12
 
         print(i, 'Samples:{}'.format(N_samples))
         ic_newton = ift.AbsDeltaEnergyController(
@@ -338,7 +385,7 @@ for i in range(6):
     # rec = correlated_field(mean).val
     rec = nmean.val
     source_reconstruction = np.zeros_like(rec)
-    # source_reconstruction[rec < 10] = rec[rec < 10]
+    source_reconstruction[rec < 120] = rec[rec < 120]
     source_var = var.val
 
     maxi = 120
@@ -361,11 +408,11 @@ for i in range(6):
                                       maxind[1]-maxi:maxind[1]+maxi],
                 -shiftx, axis=0),
         -shifty, axis=1)
-    source_var = np.roll(
-        np.roll(source_var[maxind[0]-maxi:maxind[0]+maxi,
-                           maxind[1]-maxi:maxind[1]+maxi],
-                -shiftx, axis=0),
-        -shifty, axis=1)
+    # source_var = np.roll(
+    #     np.roll(source_var[maxind[0]-maxi:maxind[0]+maxi,
+    #                        maxind[1]-maxi:maxind[1]+maxi],
+    #             -shiftx, axis=0),
+    #     -shifty, axis=1)
 
     field = BB(Re(interpolator(Trans(nmean)))).val
 
@@ -390,7 +437,16 @@ for i in range(6):
     for im, ax in zip(ims.flatten(), axes.flatten()):
         plt.colorbar(im, ax=ax)
     plt.tight_layout()
-    plt.show()
+    plt.savefig(
+            join('/home/jruestig/pro/python/lensing/',
+                'output', 'New150sources', cluster, 'tmp',
+                '_'.join((
+                    str(source['z']),
+                    str(source['id_source']),
+                    'KL{}.png'.format(i)))
+                ))
+    plt.close()
+
 
 np.save(
     join('/home/jruestig/pro/python/lensing/',
@@ -410,6 +466,13 @@ save_fits(
          source['data_0.08_slacs']['path'],
          'nonlinear_source.fits')
 )
+save_fits(
+    source['source'],
+    join('/home/jruestig/pro/python/lensing/',
+         source[dataname]['path'] + "true_source.fits")
+)
+
+
 save_fits(
     (d-field)/noise_scale,
     join('/home/jruestig/pro/python/lensing/',
