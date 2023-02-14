@@ -53,7 +53,7 @@ detectorspace = cf.Space(
 
 noise_scale = 0.08
 source_resolution = 0.04
-resolution = 0.02  # reconstruction
+resolution = 0.04  # reconstruction
 
 for clusterkey in clusterlist[:1]:
     outputfolder = join(cfg['general']['folder'], 'output', cfg['general']['outputname'], clusterkey)

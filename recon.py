@@ -247,7 +247,6 @@ for ii, pix in enumerate(imagepixels):
         plt.colorbar(im, ax=ax)
     plt.show()
 
-exit()
 
 data = ift.makeField(ift.UnstructuredDomain(mask.sum()), d[mask].reshape(-1))
 # data = interpolator_glamer(isource)
@@ -277,7 +276,7 @@ data_space = R.target
 N = ift.ScalingOperator(data_space, noise_scale)
 D_inv = R.adjoint @ N.inverse @ R + S.inverse
 j = R.adjoint_times(N.inverse_times(data))
-IC = ift.GradientNormController(iteration_limit=10000, tol_abs_gradnorm=1e-3)
+IC = ift.GradientNormController(iteration_limit=100, tol_abs_gradnorm=1e-3)
 print("Wiener")
 D = ift.InversionEnabler(D_inv, IC, approximation=S.inverse).inverse
 m = D(j)

@@ -77,7 +77,7 @@ clusterlist = list(cluster_sources.keys()); clusterlist.sort()
 
 ii = int(sys.argv[-1])
 
-cluster = 'bacco_29'
+cluster = 'barahir_20'
 sources = cluster_sources[cluster]
 source = sources[ii]
 
