@@ -8,33 +8,22 @@ import jax.numpy as jnp
 from jax import jit
 
 from source_fwd import load_fits, Blurring
-from image_positions.image_positions import Interpolator
 from scipy.interpolate import RectBivariateSpline
 from os.path import join, exists
+from functools import partial
 
 import cluster_fits as cf
 import yaml
 import sys
 from sys import exit
 
+from linear_interpolation import Interpolation, Transponator, Reshaper
+from NiftyOperators import PriorTransform
 
 #TODO:
-# - higher source variability  DONE
-# - Blurring  - check against no blurring check DONE
-# - glamer data  DONE
-# - higher SNR ? <- schlechter   DONE
 # - correlated field lesen
 # put more modular
 
-class Transponator(ift.LinearOperator):
-    def __init__(self, domain):
-        self._domain = ift.makeDomain(domain)
-        self._target = ift.makeDomain(domain)
-        self._capability = self.TIMES | self.ADJOINT_TIMES
-
-    def apply(self, x, mode):
-        # self._check_input(x, mode)
-        return ift.makeField(self._domain, x.val.T)
 
 
 cfg_file = sys.argv[1]
@@ -43,402 +32,224 @@ with open(cfg_file, 'r') as file:
 
 
 cluster_sources = np.load(cfg['general']['sources'], allow_pickle=True).item()
-clusterlist = list(cluster_sources.keys()); clusterlist.sort()
 
 
+
+# Settings
+noise_scale = 0.08
+source_resolution = 0.04
+resolution = 0.13  # reconstruction
+
+cluster = 'barahir_20'
+sources = cluster_sources[cluster]
+
+
+# Load Model and start point
+outputfolder = join(cfg['general']['folder'], 'output', cfg['general']['outputname'], cluster)
+simulation, clusternumber = cluster.split('_')[0], int(cluster.split('_')[1])
+convergence, distance, (M200, R200), subs, weights = cf.get_cluster(
+    clusternumber, cfg['cluster'][simulation],
+    {'zlens': 0.4, 'zsource': 9.0})
+ER = cf.einsteinradius(M200, 0.4, 9.0)
+models, (xy_subs, subs_mas, circulars) = cf.model_creator(
+    clusternumber,
+    cfg['reconstruction'],
+    ((ER, R200), distance, convergence.shape),
+    subs,
+    (weights, 0.05),
+    subsgetter=True
+)
+recname, model, *_ = models[0]
+path = cfg['reconstruction'][simulation]
+recposition = np.load(join(path, recname+'.npy'), allow_pickle=True).item()
+priorposition = np.load(join(path, recname+'_priorposition.npy'), allow_pickle=True).item()
+
+
+# Source Load
+source = sources[0]
+Ls = source['Ls']
+d = Ls + np.random.normal(size=Ls.shape, scale=noise_scale)
+mask = source['mask']
+DlsDs = cf.beta_hat(0.4, source['z'])
+
+
+# Data cut
 detectorspace = cf.Space(
     (round(cfg['detector']['fov']/cfg['detector']['resolution']),)*2,
     cfg['detector']['resolution']
 )
+(xmax, ymax), (xmin, ymin) = (
+    np.max(detectorspace.xycoords[:, source['mask']], axis=1),
+    np.min(detectorspace.xycoords[:, source['mask']], axis=1)
+)
+fov = detectorspace.shape[0]*cfg['detector']['resolution']
+xx = np.linspace(
+    -fov/2+cfg['detector']['resolution']/2,
+    fov/2-cfg['detector']['resolution']/2,
+    source['Ls'].shape[0])
+xmaxarg, ymaxarg, xminarg, yminarg = [
+    np.argmin(np.abs(xx-tmpx)) for tmpx in [xmax, ymax, xmin, ymin]
+]
+yslice, xslice = slice(xminarg-10, xmaxarg+10), slice(yminarg-10, ymaxarg+10)
 
-noise_scale = 0.08
-source_resolution = 0.04
-resolution = 0.04  # reconstruction
-
-for clusterkey in clusterlist[:1]:
-    outputfolder = join(cfg['general']['folder'], 'output', cfg['general']['outputname'], clusterkey)
-    simulation, clusternumber = clusterkey.split('_')
-    clusternumber = int(clusternumber)
-
-    positions = [source['position'] for source in cluster_sources[clusterkey]]
-    redshifts = [source['z'] for source in cluster_sources[clusterkey]]
-    sources = []
-    for ii in np.argsort(redshifts):
-        source = cluster_sources[clusterkey][ii]
-        print(source['z'])
-        sources.append(
-            source['source']/source['source'].max()
-        )
-    redshifts = np.sort(redshifts)
-
-    convergence, distance, (M200, R200), subs, weights = cf.get_cluster(
-        clusternumber, cfg['cluster'][simulation],
-        {'zlens': 0.4, 'zsource': 9.0})
-    ER = cf.einsteinradius(M200, 0.4, 9.0)
-    models, (xy_subs, subs_mas, circulars) = cf.model_creator(
-        int(clusterkey.split('_')[1]),
-        cfg['reconstruction'],
-        ((ER, R200), distance, convergence.shape),
-        subs,
-        (weights, 0.05),
-        subsgetter=True
-    )
-    recname, model, *_ = models[0]
-
-    path = cfg['reconstruction'][clusterkey.split('_')[0]]
-    recposition = np.load(join(path, recname+'.npy'), allow_pickle=True).item()
-    masks = []
-
-    intersources = [
-        RectBivariateSpline(
-            cf.Space(source.shape, source_resolution).xycoords[1, :, 0],
-            cf.Space(source.shape, source_resolution).xycoords[0, 0, :],
-            source) for source in sources
-    ]
-
-    deflection = cf.load_deflection(clusternumber, None, cfg['cluster'][simulation]['distance'], cfg['cluster'][simulation])
-    interdeflection = Interpolator(cf.Space((1024,)*2, cfg['cluster'][simulation]['distance']), deflection)
-
-    for ii in range(len(intersources)):
-        sourcename = 'source_{}'.format(ii)
-
-        sposition = positions[ii]
-        S = intersources[ii]
-        sz = redshifts[ii]
-
-        alpha = cf.beta_hat(cfg['cluster'][simulation]['redshift'], sz) * interdeflection(detectorspace.xycoords)
-        beta = np.array(detectorspace.xycoords - alpha)
-        beta[0] = beta[0] - sposition[0]
-        beta[1] = beta[1] - sposition[1]
-        # s = S(*(xy-pos for xy, pos in zip(
-        #         cf.Space((round(detectorspace.shape[0]*detectorspace.distances[0]/source_resolution),)*2, source_resolution).xycoords,
-        #         sposition)),
-        #     grid=False)
-
-        mask = cf.Sersic(detectorspace).brightness_point(beta, {'Sersic_0_Ie': 1., 'Sersic_0_Re': 2., 'Sersic_0_n': 3., 'Sersic_0_x0': 0., 'Sersic_0_y0': 0., 'Sersic_0_q': 1., 'Sersic_0_th': 0.}) > cfg['detector']['mask']
-        mask = cf.Sersic(detectorspace).brightness_point(beta, {'Sersic_0_Ie': 1., 'Sersic_0_Re': 2., 'Sersic_0_n': 3., 'Sersic_0_x0': 0., 'Sersic_0_y0': 0., 'Sersic_0_q': 1., 'Sersic_0_th': 0.}) > cfg['detector']['mask']*5
-
-        y = beta[:, mask]
-
-        extremum = np.max((np.abs(y.min()), np.abs(y.max()))) + resolution
-        sidelength = 2 * extremum
-        pixels = int(np.ceil(sidelength/resolution))
-        print(pixels)
-        space = cf.Space((pixels,)*2, resolution)
-        isspace = ift.RGSpace((pixels,)*2, resolution)
-        y = np.array((y[0]-extremum, y[1]-extremum))  # /(sspace.extent[1]*2)
-
-        d = load_fits(join(outputfolder, sourcename, 'd_{}.fits'.format(noise_scale)))
-        d = load_fits(join(outputfolder, sourcename, 'd_glamer_{}.fits'.format(noise_scale)))
-        Ls = S(beta[1], beta[0], grid=False)
-
-        alpha = cf.beta_hat(cfg['cluster'][simulation]['redshift'], sz) * model.deflection_point(detectorspace.xycoords, recposition)
-        beta = np.array(detectorspace.xycoords - alpha)
-        beta[0] = beta[0] - sposition[0]
-        beta[1] = beta[1] - sposition[1]
-        y = beta[:, mask]
-        y = np.array((y[0]-extremum, y[1]-extremum))  # /(sspace.extent[1]*2)
-
-        break
+d = d[xslice, yslice]
 
 
-dspace = detectorspace
+# NiftySpaces
+isspace = ift.RGSpace((256,)*2, source_resolution)
+idspace = ift.RGSpace(d.shape, resolution)
+upperleftcorner = np.multiply(isspace.shape, isspace.distances).reshape(2, 1)
+dspace = cf.Space(Ls.shape, resolution)
+pointsdomain = ift.UnstructuredDomain(
+    dspace.xycoords[:, mask].reshape(2, -1).shape)
 
-interpolator = ift.LinearInterpolator(isspace, array(y.reshape(2, -1)))
-Trans = Transponator(isspace)
-
-source = S(*space.xycoords, grid=False)
-isource = ift.makeField(isspace, source)
-
-
-if False:
-    def getB(domain, kernel, datamask):
-        tmp = np.full(domain.shape, 1)
-        arr = np.array(convolve2d(tmp, kernel))
-        mask = np.full(arr.shape, False)
-        mask[kernel.shape[0]//2:arr.shape[0]-(kernel.shape[0]//2-1),
-            kernel.shape[1]//2:arr.shape[1]-(kernel.shape[1]//2-1)] = datamask
-        mask = jnp.array(mask)
-
-        def Blurring(field):
-            return convolve2d(field, kernel)[mask]
-
-        return Blurring
-
-    zeros = jnp.full(mask.shape, 0.)
-    def fielder(x):
-        return zeros.at[mask].set(x)
-
-    Blurring = getB(Ls, load_fits(cfg['detector']['path_to_psf'])[:-1, :], mask) #
-    B = lambda x: Blurring(fielder(x))
-
-    interpolator = ift.LinearInterpolator(isspace, array(y.reshape(2, -1)))
-    Trans = Transponator(isspace)
-
-    source = S(*space.xycoords, grid=False)
-    isource = ift.makeField(isspace, source)
-
-    data = ift.makeField(ift.UnstructuredDomain(mask.sum()), d[mask].reshape(-1))
-    Bift = ift.JaxLinearOperator(data.domain, data.domain, B, func_T=B)
+# sspace
+alpha = model.deflection_point(dspace.xycoords[:, mask], recposition)
+beta = dspace.xycoords[:, mask] - DlsDs*alpha
 
 
-    def power_spectrum(k):
-        return 1000/(0.01+k)**3
-
-    harmonic_space = isspace.get_default_codomain()
-    HT = ift.HarmonicTransformOperator(harmonic_space, target=isspace)
-    power_space = ift.PowerSpace(harmonic_space)
-    PD = ift.PowerDistributor(harmonic_space, power_space)
-    prior_correlation_structure = PD(ift.PS_field(power_space, power_spectrum))
-    S = ift.DiagonalOperator(prior_correlation_structure)
-
-    R = Bift @ interpolator @ Trans @ HT
-
-    data_space = R.target
-    N = ift.ScalingOperator(data_space, noise_scale)
-    D_inv = R.adjoint @ N.inverse @ R + S.inverse
-    j = R.adjoint_times(N.inverse_times(data))
-    IC = ift.GradientNormController(iteration_limit=500, tol_abs_gradnorm=1e-3)
-    D = ift.InversionEnabler(D_inv, IC, approximation=S.inverse).inverse
-    m = D(j)
-
-    dspace = detectorspace
-    field = np.zeros(dspace.shape)
-    field[mask] = interpolator(Trans(HT(m))).val
-
-    imargs = {'extent': detectorspace.extent, 'origin': 'lower'}
-    fig, axes = plt.subplots(2, 3, figsize=(19, 10))
-    ims = np.zeros_like(axes)
-    ims[0, 0] = axes[0, 0].imshow(d, **imargs, vmin=-0.10, vmax=0.8)
-    ims[0, 1] = axes[0, 1].imshow(field, **imargs, vmin=-0.10, vmax=0.8)
-    ims[0, 2] = axes[0, 2].imshow(d-field, **imargs, cmap='RdBu_r')
-    ims[1, 0] = axes[1, 0].imshow(isource.val, origin='lower')
-    ims[1, 1] = axes[1, 1].imshow(HT(m).val.T, origin='lower')
-    ims[1, 2] = axes[1, 2].imshow(isource.val-HT(m).val.T, origin='lower', cmap='RdBu_r')
-    axes[0, 0].set_title('data')
-    axes[0, 1].set_title('Ls')
-    axes[0, 2].set_title('data - Ls')
-    axes[1, 0].set_title('source')
-    axes[1, 1].set_title('rec')
-    axes[1, 2].set_title('source - rec')
-    for im, ax in zip(ims.flatten(), axes.flatten()):
-        plt.colorbar(im, ax=ax)
-    plt.tight_layout()
-    plt.savefig('output/B_WienerFilter_n{}.png'.format(noise_scale))
-    plt.close()
+# Operators
+BB = ift.JaxLinearOperator(
+    idspace,
+    idspace,
+    partial(Blurring, kernel=load_fits(cfg['detector']['path_to_psf'])[:-1, :]),
+    domain_dtype=float)
+Trans = Transponator(idspace)
+Interpolator = Interpolation(isspace, 'source', pointsdomain, 'lens')
+# Re = Reshaper(Interpolator.target, idspace)
 
 
+tmpmask = mask[xslice, yslice]
 
-imargs = {'extent': dspace.extent, 'origin': 'lower'}
-# field = np.zeros(dspace.shape)
-# field[mask] = interpolator(Trans(isource)).val
-# fig, axes = plt.subplots(1, 3)
-# ims = np.zeros_like(axes)
-# ims[0] = axes[0].imshow(d, **imargs)
-# ims[1] = axes[1].imshow(field, **imargs)
-# ims[2] = axes[2].imshow(d-field, **imargs)
-# for im, ax in zip(ims.flatten(), axes.flatten()): plt.colorbar(im, ax=ax)
-# axes[0].set_title('data')
-# axes[1].set_title('Ls interpolated')
-# axes[2].set_title('data - Ls interpolated')
-# plt.show()
+class Reshaper(ift.LinearOperator):
+    def __init__(self, domain, target, mask):
+        self._domain = ift.DomainTuple.make(domain)
+        self._target = ift.DomainTuple.make(target)
+        self._mask = mask
+        self._capability = self.TIMES | self.ADJOINT_TIMES
 
+    def apply(self, x, mode):
+        self._check_input(x, mode)
+        if mode == self.TIMES:
+            out = np.zeros(self._target.shape)
+            out[self._mask] = x.val
+            return ift.Field.from_raw(self._target, out)
+        else:
+            return ift.Field.from_raw(
+                self._domain, x.val[self._mask]
+            )
 
+Re = Reshaper(Interpolator.target, idspace, tmpmask)
 
+# LensModel & Operator
+lprior = PriorTransform(model.get_priorparams())
+lmodel = ift.JaxOperator(
+    lprior.domain,
+    pointsdomain,
+    lambda x: (upperleftcorner - isspace.distances[0]/2 +
+               (dspace.xycoords[:, mask] -
+                model.deflection_point(
+                    detectorspace.xycoords[:, mask], x)
+                ).reshape(2, -1))
+)
+
+# SourceModel & Operator
 args = {
     'offset_mean': 0,
     'offset_std': (1e-3, 1e-6),
     # Amplitude of field fluctuations
-    'fluctuations': (1., 0.8),  # 1.0, 1e-2
+    'fluctuations': (3., 1e-2),  # 1.0, 1e-2
     # Exponent of power law power spectrum component
-    'loglogavgslope': (-3., 1),  # -6.0, 1
+    'loglogavgslope': (-6., 0.4),  # -6.0, 1
     # Amplitude of integrated Wiener process power spectrum component
-    'flexibility': (1, .5),  # 1.0, 0.5
-    # How ragged the integrated Wiener process component is
-    'asperity': (0.1, 0.4)  # 0.1, 0.5
-}
-
-args = {
-    'offset_mean': 0,
-    'offset_std': (1e-3, 1e-6),
-    # Amplitude of field fluctuations
-    'fluctuations': (1., 1e-2),  # 1.0, 1e-2
-    # Exponent of power law power spectrum component
-    'loglogavgslope': (-6., 1),  # -6.0, 1
-    # Amplitude of integrated Wiener process power spectrum component
-    'flexibility': (1, .5),  # 1.0, 0.5
+    'flexibility': (1, 1.5),  # 1.0, 0.5
     # How ragged the integrated Wiener process component is
     'asperity': (0.1, 0.5)  # 0.1, 0.5
 }
+diffuse = ift.exp(ift.SimpleCorrelatedField(isspace, **args))
 
-correlated_field = ift.exp(ift.SimpleCorrelatedField(isspace, **args))
+# Fullmodel
+fullmodel = Re @ Interpolator @ (
+    lmodel.ducktape_left('lens') @ lprior + diffuse.ducktape_left('source')
+)
+
+data = ift.makeField(idspace, d)
+N = ift.ScalingOperator(idspace, noise_scale**2, sampling_dtype=float)
 
 
-# Bift => comment d
-d = Ls + np.random.normal(scale=noise_scale, size=Ls.shape)
-data = ift.makeField(ift.UnstructuredDomain(mask.sum()), d[mask].reshape(-1))
+likelihood_energy = (
+    ift.GaussianEnergy(data=data, inverse_covariance=N.inverse) @ fullmodel
+)
 
-ic_sampling = ift.AbsDeltaEnergyController(deltaE=0.5, iteration_limit=500)
-ic_newton = ift.AbsDeltaEnergyController(name='Newton', deltaE=0.05, convergence_level=1, iteration_limit=10)
+
+startpoint = ift.MultiField.from_raw(lprior.domain, priorposition)
+startpoint = startpoint.unite(
+    ift.full(diffuse.domain, 0. )
+    #ift.from_random(diffuse.domain)
+    )
+
+plt.imshow(fullmodel(startpoint).val)
+plt.show()
+
+N_samples = 5
+global_iterations = 10
+
+ic_sampling = ift.AbsDeltaEnergyController(name='linear', deltaE=0.1, iteration_limit=50)
+ic_newton = ift.AbsDeltaEnergyController(name='Newton', deltaE=0.1, iteration_limit=20)
 minimizer = ift.NewtonCG(ic_newton)
-ic_sampling_nl = ift.AbsDeltaEnergyController(deltaE=0.5, iteration_limit=50, convergence_level=2)
+ic_sampling_nl = ift.AbsDeltaEnergyController(name='nonlinear', deltaE=0.5, iteration_limit=10)
 minimizer_sampling = ift.NewtonCG(ic_sampling_nl)
 
-N = ift.ScalingOperator(data.domain, 1./noise_scale, sampling_dtype=float)
-likelihood_energy = (ift.GaussianEnergy(data=data, inverse_covariance=N) @ interpolator @ Trans @ correlated_field)
-# likelihood_energy = (ift.GaussianEnergy(data=data, inverse_covariance=N) @ Bift @ interpolator @ Trans @ correlated_field)
-H = ift.StandardHamiltonian(likelihood_energy, ic_sampling)
+s = source['source']
 
-initial_mean = ift.from_random(H.domain, 'normal')
-mean = initial_mean
+outdir = f'output/clusterrec/{cluster}'
 
+def plot_check(samples_list, ii):
+    mean, var = samples_list.sample_stat()
 
-import time
-t = time.time()
-N_samples = 5
-# Draw new samples to approximate the KL six times
-for i in range(10):
-    print(i, 'Samples:{}'.format(N_samples))
-
-    if i > 2:
-        ic_newton = ift.AbsDeltaEnergyController(name='Newton {}'.format(i), deltaE=0.05, convergence_level=1, iteration_limit=20)
-    elif i > 5:
-        ic_newton = ift.AbsDeltaEnergyController(name='Newton {}'.format(i), deltaE=1e-6, convergence_level=1, iteration_limit=30)
-    elif i > 7:
-        ic_newton = ift.AbsDeltaEnergyController(name='Newton {}'.format(i), deltaE=1E-8, convergence_level=1, iteration_limit=30)
-    minimizer = ift.NewtonCG(ic_newton)
-
-    if i > 2:
-        if i > 5:
-            N_samples = 7
-        elif i == 9:
-            N_samples = 12
-        KL = ift.SampledKLEnergy(mean, H, N_samples, minimizer_sampling, mirror_samples=True)
-    else:
-        KL = ift.SampledKLEnergy(mean, H, N_samples, None, mirror_samples=True)
-
-    # Draw new samples and minimize KL
-    KL, conve = minimizer(KL)
-    mean = KL.position
-
-    recsource = correlated_field(mean).val
-    sfield = np.zeros_like(recsource)
-    sfield[recsource < 1] = recsource[recsource < 1]
-
-    field = np.zeros(dspace.shape)
-    field[mask] = interpolator(Trans(correlated_field(mean))).val
+    source_reconstruction = diffuse.force(mean).val
+    dfield = fullmodel(mean).val
 
     fig, axes = plt.subplots(2, 3, figsize=(19, 10))
     ims = np.zeros_like(axes)
-    ims[0, 0] = axes[0, 0].imshow(d, **imargs, vmin=-0.10, vmax=0.8)
-    ims[0, 1] = axes[0, 1].imshow(field, **imargs, vmin=-0.10, vmax=0.8)
-    ims[0, 2] = axes[0, 2].imshow(d-field, **imargs, cmap='RdBu_r')
-    ims[1, 0] = axes[1, 0].imshow(source, origin='lower', vmin=0.0, vmax=1.0)
-    ims[1, 1] = axes[1, 1].imshow(sfield.T, origin='lower', vmin=0.0, vmax=1.0)
-    ims[1, 2] = axes[1, 2].imshow(source-sfield.T, origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3)
-    axes[0, 0].set_title('data')
-    axes[0, 1].set_title('Ls')
-    axes[0, 2].set_title('data - Ls')
-    axes[1, 0].set_title('source')
-    axes[1, 1].set_title('rec')
-    axes[1, 2].set_title('source - rec')
+    ims[0, 0] = axes[0, 0].imshow(
+        s, origin='lower')
+    ims[0, 1] = axes[0, 1].imshow(
+        source_reconstruction, origin='lower')
+    ims[0, 2] = axes[0, 2].imshow(
+        s-source_reconstruction, origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3)
+    ims[1, 0] = axes[1, 0].imshow(data.val, vmin=-0.10)
+    ims[1, 1] = axes[1, 1].imshow(dfield, vmin=-0.10)
+    ims[1, 2] = axes[1, 2].imshow((data.val-dfield)/noise_scale, vmin=-3, vmax=3)
+    axes[0, 0].set_title('source')
+    axes[0, 1].set_title('rec')
+    axes[0, 2].set_title('source - rec')
+    axes[1, 0].set_title('data')
+    axes[1, 1].set_title('BLs')
+    axes[1, 2].set_title('(data - BLs)/noisescale')
     for im, ax in zip(ims.flatten(), axes.flatten()):
         plt.colorbar(im, ax=ax)
     plt.tight_layout()
-    plt.savefig('output/smask_n{}_iter{}.png'.format(noise_scale, i))
+    plt.savefig(f'{outdir}/KL_{ii}')
     plt.close()
-    print((time.time()-t)/60)
 
 
-def power_spectrum(k):
-    return 1000/(0.01+k)**3
+def Nsamples(iteration):
+    if iteration < 3:
+        return 5
+    else:
+        return 8
 
-harmonic_space = correlated_field.target[0].get_default_codomain()
-HT = ift.HarmonicTransformOperator(harmonic_space, target=correlated_field.target[0])
-power_space = ift.PowerSpace(harmonic_space)
-PD = ift.PowerDistributor(harmonic_space, power_space)
-prior_correlation_structure = PD(ift.PS_field(power_space, power_spectrum))
-S = ift.DiagonalOperator(prior_correlation_structure)
-
-R = interpolator @ Trans @ HT
-
-data_space = R.target
-N = ift.ScalingOperator(data_space, noise_scale)
-D_inv = R.adjoint @ N.inverse @ R + S.inverse
-j = R.adjoint_times(N.inverse_times(data))
-IC = ift.GradientNormController(iteration_limit=500, tol_abs_gradnorm=1e-3)
-D = ift.InversionEnabler(D_inv, IC, approximation=S.inverse).inverse
-m = D(j)
-
-field = np.zeros(dspace.shape)
-field[mask] = interpolator(Trans(HT(m))).val
-
-fig, axes = plt.subplots(2, 3, figsize=(19, 10))
-ims = np.zeros_like(axes)
-ims[0, 0] = axes[0, 0].imshow(d, **imargs, vmin=-0.10, vmax=0.8)
-ims[0, 1] = axes[0, 1].imshow(field, **imargs, vmin=-0.10, vmax=0.8)
-ims[0, 2] = axes[0, 2].imshow(d-field, **imargs, cmap='RdBu_r')
-ims[1, 0] = axes[1, 0].imshow(isource.val, origin='lower')
-ims[1, 1] = axes[1, 1].imshow(HT(m).val.T, origin='lower')
-ims[1, 2] = axes[1, 2].imshow(isource.val-HT(m).val.T, origin='lower', cmap='RdBu_r')
-axes[0, 0].set_title('data')
-axes[0, 1].set_title('Ls')
-axes[0, 2].set_title('data - Ls')
-axes[1, 0].set_title('source')
-axes[1, 1].set_title('rec')
-axes[1, 2].set_title('source - rec')
-for im, ax in zip(ims.flatten(), axes.flatten()):
-    plt.colorbar(im, ax=ax)
-plt.tight_layout()
-plt.savefig('output/smask_WienerFilter_n{}.png'.format(noise_scale))
-plt.close()
-
-
-# analytical source check
-if False:
-    SERSIC = cf.Sersic(space)
-    sparams = {'Sersic_0_Ie': np.array(.5).reshape(1),
-            'Sersic_0_Re': np.array(1.5/6).reshape(1),
-            'Sersic_0_n': np.array(1.7).reshape(1),
-            'Sersic_0_x0': 0.0,
-            'Sersic_0_y0': 0.0,
-            'Sersic_0_q': np.array(.6).reshape(1),
-            'Sersic_0_th': np.array(2.1).reshape(1)}
-    sparams2 = {'Sersic_0_Ie': np.array(.5).reshape(1),
-                'Sersic_0_Re': np.array(1.5/6).reshape(1),
-                'Sersic_0_n': np.array(1.7).reshape(1),
-                'Sersic_0_x0': sposition[0].reshape(1),
-                'Sersic_0_y0': sposition[1].reshape(1),
-                'Sersic_0_q': np.array(.6).reshape(1),
-                'Sersic_0_th': np.array(2.1).reshape(1)}
-    source = array(SERSIC.brightness_point(
-        cf.Space(isspace.shape, isspace.distances).xycoords, sparams))
-    isource = ift.makeField(isspace, source)
-    interpolator = ift.LinearInterpolator(isspace, array(y.reshape(2, -1)))
-    Trans = Transponator(isspace)
-    dspace = detectorspace
-    interdef = lambda x: cf.beta_hat(cfg['cluster'][simulation]['redshift'], sz) * interdeflection(x)
-    field = np.zeros(dspace.shape)
-    field[mask] = interpolator(Trans(isource)).val
-    imargs = {'extent': dspace.extent, 'origin': 'lower'}
-    analytical = SERSIC.brightness_point(dspace.xycoords-interdef(dspace.xycoords), sparams2)
-    fig, axes = plt.subplots(2, 3)
-    ims = np.zeros_like(axes)
-    ims[0, 0] = axes[0, 0].imshow(analytical, **imargs)
-    ims[0, 1] = axes[0, 1].imshow(field, **imargs)
-    ims[0, 2] = axes[0, 2].imshow(field-analytical, **imargs)
-    ims[1, 0] = axes[1, 0].imshow(interpolator.adjoint(ift.makeField(
-        ift.UnstructuredDomain(mask.sum()),
-        array(SERSIC.brightness_point(y, sparams)).reshape(-1))).val, origin='lower')
-    ims[1, 1] = axes[1, 1].imshow(source, origin='lower')
-    ims[1, 2] = axes[1, 2].imshow((field-array(SERSIC.brightness_point(dspace.xycoords-interdef(detectorspace.xycoords), sparams)))/array(SERSIC.brightness_point(dspace.xycoords-interdef(detectorspace.xycoords), sparams)),
-                                vmax=.1, vmin=-.1,
-                                **imargs)
-    for im, ax in zip(ims.flatten(), axes.flatten()): plt.colorbar(im, ax=ax)
-    axes[0, 0].set_title('Ls analytical')
-    axes[0, 1].set_title('Ls interpolated')
-    axes[0, 2].set_title('inter - analy')
-    axes[1, 0].set_title('(LBN)^T d')
-    axes[1, 1].set_title('source')
-    axes[1, 2].set_title('(inter - analy)/analy')
-    plt.show()
+samples = ift.optimize_kl(
+    likelihood_energy,
+    global_iterations,
+    Nsamples,
+    minimizer,
+    ic_sampling,
+    minimizer_sampling,
+    initial_position=startpoint,
+    constants=[key for key in lprior.domain.keys()],
+    output_directory=outdir,
+    inspect_callback=plot_check,
+    dry_run=False,
+)

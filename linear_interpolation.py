@@ -152,3 +152,21 @@ class Transponator(ift.LinearOperator):
     def apply(self, x, mode):
         # self._check_input(x, mode)
         return ift.makeField(self._domain, x.val.T)
+
+
+class Reshaper(ift.LinearOperator):
+    def __init__(self, domain, target):
+        self._domain = ift.DomainTuple.make(domain)
+        self._target = ift.DomainTuple.make(target)
+        self._capability = self.TIMES | self.ADJOINT_TIMES
+
+    def apply(self, x, mode):
+        self._check_input(x, mode)
+        if mode == self.TIMES:
+            return ift.Field.from_raw(
+                self._target, x.val.reshape(self._target.shape)
+            )
+        else:
+            return ift.Field.from_raw(
+                self._domain, x.val.reshape(self._domain.shape)
+            )

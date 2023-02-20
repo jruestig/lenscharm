@@ -77,7 +77,7 @@ clusterlist = list(cluster_sources.keys()); clusterlist.sort()
 
 ii = int(sys.argv[-1])
 
-cluster = 'barahir_20'
+cluster = 'barahir_0'
 sources = cluster_sources[cluster]
 source = sources[ii]
 
@@ -196,8 +196,8 @@ psf = load_fits(cfg['detector']['path_to_psf'])[:-1, :]
 # B = lambda x: Blurring(x, psf[11:20, 11:20])
 B = lambda x: Blurring(x, psf)
 BB = ift.JaxLinearOperator(dspace, dspace, B, domain_dtype=float)
-BB = ift.DiagonalOperator(
-    ift.Field.from_raw(dspace, 1.), sampling_dtype=float)
+# BB = ift.DiagonalOperator(
+#     ift.Field.from_raw(dspace, 1.), sampling_dtype=float)
 Re = Reshaper(interpolator.target, dspace)
 data = ift.makeField(dspace, d)
 

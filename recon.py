@@ -60,23 +60,21 @@ modeldeflection = 'glamer'  # model, glamer
 
 noise_scale = 0.08
 source_resolution = 0.00022568588643953524
-# resolution = source_resolution  # reconstruction
-# resolution = 0.005
-resolution = 0.00125
 resolution = source_resolution * 5
 lensresolution = 0.005
 
 
 source = load_fits('/home/jruestig/Data/Thorsten_project/CII_sim/CII_sim/tmp_source.fits')
 d = load_fits('/home/jruestig/Data/Thorsten_project/CII_sim/CII_sim/glamer_ls_{}arcsec.fits'.format(lensresolution))
-deflection_ = np.array((load_fits('/home/jruestig/Data/Thorsten_project/CII_sim/CII_sim/alphax_clus_{}arcsec.fits'.format(lensresolution)),
-                        load_fits('/home/jruestig/Data/Thorsten_project/CII_sim/CII_sim/alphay_clus_{}arcsec.fits'.format(lensresolution))))
-deflection_ *= cf.toarcsec
+# deflection_ = np.array((load_fits('/home/jruestig/Data/Thorsten_project/CII_sim/CII_sim/alphax_clus_{}arcsec.fits'.format(lensresolution)),
+#                         load_fits('/home/jruestig/Data/Thorsten_project/CII_sim/CII_sim/alphay_clus_{}arcsec.fits'.format(lensresolution))))
+# deflection_ *= cf.toarcsec
 
 
 d *= 1e11
 source *= 1e11
 mask = d > 0
+
 
 SO = RectBivariateSpline(
     cf.Space(source.shape, source_resolution).xycoords[1, :, 0],
@@ -135,6 +133,7 @@ recposition = np.load(
     allow_pickle=True
 ).item()
 
+
 # real deflection
 if False:
     print('Make mask')
@@ -160,19 +159,19 @@ else:
     )
     imagepixels = get_pixel(detectorspace, imag)
 
-# mask = np.zeros_like(mask)
-# for pix in imagepixels:
-#     mask[pix[1]-50:pix[1]+50, pix[0]-50:pix[0]+50] = True
 
-# y = detectorspace.xycoords[:, mask] - cf.beta_hat(0.4, redshift) * interdeflection(detectorspace.xycoords[:, mask])
-y = detectorspace.xycoords[:, mask] - deflection_[:, mask]
+y = detectorspace.xycoords[:, mask] - interdeflection(detectorspace.xycoords[:, mask])
 y = y - sposition.repeat(y.shape[1]).reshape(2, -1)
+
+# sidelength = 2 * extremum
+# pixels = int(np.ceil(sidelength/resolution))
+# y = np.array((y[0]-extremum, y[1]-extremum))  # /(sspace.extent[1]*2)
+
 extremum = np.max((np.abs(y.min()), np.abs(y.max()))) + resolution
-sidelength = 2 * extremum
-pixels = int(np.ceil(sidelength/resolution))
+pixels = 256
 space = cf.Space((pixels,)*2, resolution)
 isspace = ift.RGSpace((pixels,)*2, resolution)
-y = np.array((y[0]-extremum, y[1]-extremum))  # /(sspace.extent[1]*2)
+sidelength = space.extent[1]*2
 
 print('making source')
 tmpsource = SO(*cf.Space((int(np.ceil(sidelength/source_resolution)),)*2, source_resolution).xycoords, grid=False)
@@ -181,71 +180,31 @@ ssource = downsample(
     int(resolution/source_resolution)
 )
 tmp = np.zeros(isspace.shape)
-tmp[:-1, :-1] = ssource
-# tmp = ssource
+# tmp[:-1, :-1] = ssource
+tmp = ssource
 isource = ift.makeField(isspace, tmp)
 
 interpolator_glamer = ift.LinearInterpolator(isspace, np.array(y.reshape(2, -1)))
 
-if modeldeflection == 'model':
-    print('model deflection')
-    alpham = model.deflection_point(detectorspace.xycoords[:, mask], recposition)
-    betam = np.array(detectorspace.xycoords[:, mask] - alpham)
-    betam[0] = betam[0] - sposition[0]
-    betam[1] = betam[1] - sposition[1]
-    ym = np.array((betam[0]-extremum, betam[1]-extremum))  # /(sspace.extent[1]*2)
-else:
+print('model deflection')
+alpham = model.deflection_point(detectorspace.xycoords[:, mask], recposition)
+betam = np.array(detectorspace.xycoords[:, mask] - alpham)
+betam[0] = betam[0] - sposition[0]
+betam[1] = betam[1] - sposition[1]
+# ym = np.array((betam[0]-extremum, betam[1]-extremum))  # /(sspace.extent[1]*2)
+ym = betam + sidelength/2
+
+if False:
     print('real deflection')
     alpham = deflection_[:, mask]
     betam = detectorspace.xycoords[:, mask] - alpham
     betam = betam - sposition.repeat(betam.shape[1]).reshape(2, -1)
     ym = np.array((betam[0]-extremum, betam[1]-extremum))  # /(sspace.extent[1]*2)
 
-interpolator = ift.LinearInterpolator(isspace, np.array(ym.reshape(2, -1)))
+interpolator = ift.LinearInterpolator(
+    isspace, np.array(ym.reshape(2, -1)), cast_to_zero=True)
 Trans = Transponator(isspace)
 
-
-newshape = 256
-field = np.zeros(detectorspace.shape)
-field[mask] = interpolator((isource)).val
-from source_fwd import save_fits
-imagepixels = get_pixel(detectorspace, imag)
-for ii, pix in enumerate(imagepixels):
-    masknew = np.zeros_like(mask)
-    masknew[pix[1]-newshape//2:pix[1]+newshape//2,
-            pix[0]-newshape//2:pix[0]+newshape//2] = True
-
-    np.save(
-        './output/fields/npy/glamer_field{}_sr{}_lr{}'.format(
-            ii, resolution, lensresolution),
-        d[masknew].reshape((newshape,)*2)
-    )
-    np.save(
-        './output/fields/npy/interpolated_field{}_sr{}_lr{}'.format(
-            ii, resolution, lensresolution),
-        field[masknew].reshape((newshape,)*2)
-    )
-
-    save_fits(
-        d[masknew].reshape((newshape,)*2),
-        './output/fields/glamers/glamer_field{}_sr{}_lr{}'.format(
-            ii, resolution, lensresolution)
-    )
-    save_fits(
-        field[masknew].reshape((newshape,)*2),
-        './output/fields/interpolated/interpolated_field{}_sr{}_lr{}'.format(
-            ii, resolution, lensresolution)
-    )
-
-    fig, axes = plt.subplots(1, 3)
-    im0 = axes[0].imshow(d[masknew].reshape((newshape,)*2)+1, norm=LogNorm())
-    im1 = axes[1].imshow(field[masknew].reshape((newshape,)*2)+1, norm=LogNorm())
-    im2 = axes[2].imshow(
-        d[masknew].reshape((newshape,)*2)+1-field[masknew].reshape((newshape,)*2)+1,
-        norm=LogNorm())
-    for im, ax in zip([im0, im1, im2], axes):
-        plt.colorbar(im, ax=ax)
-    plt.show()
 
 
 data = ift.makeField(ift.UnstructuredDomain(mask.sum()), d[mask].reshape(-1))
@@ -276,7 +235,7 @@ data_space = R.target
 N = ift.ScalingOperator(data_space, noise_scale)
 D_inv = R.adjoint @ N.inverse @ R + S.inverse
 j = R.adjoint_times(N.inverse_times(data))
-IC = ift.GradientNormController(iteration_limit=100, tol_abs_gradnorm=1e-3)
+IC = ift.GradientNormController(iteration_limit=1000, tol_abs_gradnorm=1e-3)
 print("Wiener")
 D = ift.InversionEnabler(D_inv, IC, approximation=S.inverse).inverse
 m = D(j)
@@ -309,43 +268,8 @@ axes[-1, 2].set_title('source - rec')
 for im, ax in zip(ims.flatten(), axes.flatten()):
     plt.colorbar(im, ax=ax)
 plt.tight_layout()
-plt.savefig(
-    join('/home/jruestig/pro/python/lensing/output/interbeginning',
-         'dglamer_glamerdeflection_WienerFilter_lr{}_sr{}_tmp.pdf'.format(
-             lensresolution, resolution))
-)
-plt.close()
+plt.show()
 
-
-exit()
-
-fig, axes = plt.subplots(2, 3, figsize=(19, 10))
-ims = np.zeros_like(axes)
-ims[0, 0] = axes[0, 0].imshow(dd, **imargs)
-ims[0, 1] = axes[0, 1].imshow(field, **imargs)
-ims[0, 2] = axes[0, 2].imshow(dd-field, **imargs, cmap='RdBu_r')
-for ax in axes[0]:
-    ax.contour(mask, **imargs, cmap='Greys')
-ims[1, 0] = axes[1, 0].imshow(isource.val.T/isource.val.max(), origin='lower', norm=LogNorm(vmin=0.0001, vmax=1.0))
-ims[1, 1] = axes[1, 1].imshow(HT(m).val/isource.val.max(), origin='lower', norm=LogNorm(vmin=0.0001, vmax=1.0))
-ims[1, 2] = axes[1, 2].imshow((isource.val.T-HT(m).val)/isource.val.max(), origin='lower', cmap='RdBu_r')
-axes[0, 0].set_title('data')
-axes[0, 1].set_title('Ls')
-axes[0, 2].set_title('data - Ls')
-axes[1, 0].set_title('source')
-axes[1, 1].set_title('rec')
-axes[1, 2].set_title('source - rec')
-for im, ax in zip(ims.flatten(), axes.flatten()):
-    plt.colorbar(im, ax=ax)
-plt.tight_layout()
-plt.savefig(
-    join('/home/jruestig/pro/python/lensing/output/interbeginning',
-         'dglamer_modeldeflection_WienerFilter_lr{}_sr{}.pdf'.format(
-             lensresolution, resolution))
-)
-plt.close()
-
-exit()
 
 args = {
     'offset_mean': 0,
@@ -429,8 +353,36 @@ for i in range(10):
         plt.colorbar(im, ax=ax)
     plt.tight_layout()
     plt.savefig(
-        join('/home/jruestig/pro/python/lensing/output/interbeginning/KLs',
-             'newmask_dglamer_defmodel_lr{}_sr{}_iter{}.png'.format(
-                 lensresolution, resolution, i))
+        join('/home/jruestig/pro/python/lensing/output/interbeginning/newkls',
+             'KL_{}.png'.format(i))
         )
     plt.close()
+
+    fig, axes = plt.subplots(6, 3, figsize=(20, 30))
+    ims = np.zeros_like(axes)
+    imagepixels = get_pixel(detectorspace, imag)
+    for ii, pix in enumerate(imagepixels):
+        masknew = np.zeros_like(mask)
+        masknew[pix[1]-50:pix[1]+50, pix[0]-50:pix[0]+50] = True
+        axes[ii, 0].set_title('data')
+        axes[ii, 1].set_title('Ls')
+        axes[ii, 2].set_title('data - Ls')
+        ims[ii, 0] = axes[ii, 0].imshow(dd[masknew].reshape(100, 100)+1, norm=LogNorm())
+        ims[ii, 1] = axes[ii, 1].imshow(field[masknew].reshape(100, 100)+1, norm=LogNorm())
+        ims[ii, 2] = axes[ii, 2].imshow(dd[masknew].reshape(100, 100)+1-field[masknew].reshape(100, 100)+1, cmap='RdBu_r')
+    ims[-1, 0] = axes[-1, 0].imshow(isource.val.T/isource.val.max(), origin='lower', norm=LogNorm(vmin=0.0001, vmax=1.5))
+    ims[-1, 1] = axes[-1, 1].imshow(sfield/isource.val.max(), origin='lower', norm=LogNorm(vmin=0.0001, vmax=1.5))
+    ims[-1, 2] = axes[-1, 2].imshow((isource.val.T-sfield)/isource.val.max(), origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3)
+    axes[-1, 0].set_title('source')
+    axes[-1, 1].set_title('rec')
+    axes[-1, 2].set_title('source - rec')
+    for im, ax in zip(ims.flatten(), axes.flatten()):
+        plt.colorbar(im, ax=ax)
+    plt.tight_layout()
+    plt.savefig(
+        join('/home/jruestig/pro/python/lensing/output/interbeginning/newkls',
+             'closeup_KL_{}.png'.format(i))
+        )
+    plt.close()
+
+    del(field)
