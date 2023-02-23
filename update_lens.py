@@ -150,13 +150,12 @@ snrmask = (Blurring(d, smoother) > 2*noise_scale)
 SNR = d[snrmask].sum()/(noise_scale*np.sqrt(snrmask.sum()))
 
 fig, axes = plt.subplots(2, 2)
-axes[0, 0].imshow(s)
-axes[0, 1].imshow(Ls+noise)
+axes[0, 0].imshow(s, origin='lower')
+axes[0, 1].imshow(Ls+noise, origin='lower')
 axes[0, 1].set_title(SNR)
-axes[1, 0].imshow(cdata, norm=LogNorm())
-axes[1, 1].imshow(np.hypot(*ddata))
+axes[1, 0].imshow(cdata.T, norm=LogNorm(), origin='lower')
+axes[1, 1].imshow(np.hypot(*ddata), origin='lower')
 plt.show()
-
 
 # SPACES
 isspace = ift.RGSpace((128,)*2, detectordis)
@@ -514,11 +513,14 @@ minimizer = ift.NewtonCG(ic_newton)
 
 outputdir = 'output/fullmodel/source_substructure'
 
+
 def deflection_check(samples_list, ii):
     mean, var = samples_list.sample_stat()
 
-    convergence = convergence_model.force(mean).val
-    deflectionf = deflection(convergence_model.force(mean)).val.reshape(2, *isspace.shape)
+    #FIXME: Remove Transpose
+    convergence = convergence_model.force(mean).val.T
+    deflectionf = deflection(convergence_model.force(mean)).val.reshape(2, *isspace.shape)[::-1]
+    deflectionf = np.einsum('ijk->ikj', deflectionf)
 
     vmax = np.hypot(*ddata).max()
     fig, axes = plt.subplots(2, 3, figsize=(19, 10))
@@ -535,7 +537,8 @@ def deflection_check(samples_list, ii):
         np.hypot(*deflectionf), vmin=-0.10, origin='lower', vmax=vmax, extent=detectorspace.extent)
     ims[1, 2] = axes[1, 2].imshow(
         np.hypot(*(ddata-deflectionf))/vmax,
-        vmin=-0.3, vmax=0.3, origin='lower', cmap='RdBu_r', extent=detectorspace.extent)
+        vmin=-0.3, vmax=0.3,
+        origin='lower', cmap='RdBu_r', extent=detectorspace.extent)
     axes[0, 0].set_title('convergence')
     axes[0, 1].set_title('rec')
     axes[0, 2].set_title('(convergence - rec)/maxconvergence')
@@ -566,7 +569,7 @@ def Ls_check(samples_list, ii):
     ims[0, 1] = axes[0, 1].imshow(
         source_reconstruction, origin='lower', vmin=0, vmax=s.max(), extent=detectorspace.extent)
     ims[0, 2] = axes[0, 2].imshow(
-        (s-source_reconstruction)/source_std, origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3, extent=detectorspace.extent)
+        np.abs(s-source_reconstruction)/source_std, origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3, extent=detectorspace.extent)
     ims[1, 0] = axes[1, 0].imshow(
         data.val, vmin=-0.10, origin='lower', vmax=data.val.max(), extent=detectorspace.extent)
     ims[1, 1] = axes[1, 1].imshow(
@@ -621,7 +624,7 @@ def Nsamples(iteration):
         return 8
 
 
-ic_newton = ift.AbsDeltaEnergyController(name='Newton', deltaE=0.001, iteration_limit=10)
+ic_newton = ift.AbsDeltaEnergyController(name='Newton', deltaE=0.001, iteration_limit=1)
 minimizer = ift.NewtonCG(ic_newton)
 
 
@@ -637,35 +640,5 @@ samples = ift.optimize_kl(
     initial_position=None,
     # constants=[key for key in sprior.domain.keys()],
     dry_run=False,
+    resume=True,
 )
-
-
-def correlated_check(samples_list, ii):
-    mean, var = samples_list.sample_stat()
-
-    convergence = correlated_convergence.force(mean).exp().val
-    deflectionf = deflection(correlated_convergence.force(mean).exp()).val.reshape(2, *isspace.shape)
-
-    vmax = np.hypot(*ddata).max()
-    fig, axes = plt.subplots(2, 3, figsize=(19, 10))
-    ims = np.zeros_like(axes)
-    ims[0, 0] = axes[0, 0].imshow(cdata, origin='lower',  vmax=cdata.max()) #norm=LogNorm(vmax=cdata.max(), vmin=cdata.min()))
-    ims[0, 1] = axes[0, 1].imshow(convergence, origin='lower', vmax=cdata.max())  # norm=LogNorm(vmax=cdata.max(), vmin=cdata.min()))
-    ims[0, 2] = axes[0, 2].imshow(
-        (cdata-convergence)/cdata.max(), origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3)
-    ims[1, 0] = axes[1, 0].imshow(np.hypot(*ddata), vmin=-0.10, origin='lower', vmax=vmax)
-    ims[1, 1] = axes[1, 1].imshow(np.hypot(*deflectionf), vmin=-0.10, origin='lower', vmax=vmax)
-    ims[1, 2] = axes[1, 2].imshow(
-        np.hypot(*(ddata-deflectionf))/vmax,
-        vmin=-0.3, vmax=0.3, origin='lower', cmap='RdBu_r')
-    axes[0, 0].set_title('convergence')
-    axes[0, 1].set_title('rec')
-    axes[0, 2].set_title('(convergence - rec)/maxconvergence')
-    axes[1, 0].set_title('deflection')
-    axes[1, 1].set_title('reconstruction')
-    axes[1, 2].set_title('(deflection - reconstruction)/maxdeflection')
-    for im, ax in zip(ims.flatten(), axes.flatten()):
-        plt.colorbar(im, ax=ax)
-    plt.tight_layout()
-    plt.savefig(f'{outputdir}/correlated_KL_{ii}.png')
-    plt.close()
