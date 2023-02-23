@@ -74,10 +74,10 @@ Ls = So.brightness_point(detectorspace.xycoords - dpie.deflection_field(lpostrue
 noise = np.random.normal(size=Ls.shape, scale=noise_scale)
 d = Ls + noise
 
-fig, (a, b) = plt.subplots(1, 2)
-a.imshow(s)
-b.imshow(Ls+noise)
-plt.show()
+# fig, (a, b) = plt.subplots(1, 2)
+# a.imshow(s)
+# b.imshow(Ls+noise)
+# plt.show()
 
 
 # SPACES
@@ -137,8 +137,8 @@ diffuse = ift.exp(ift.SimpleCorrelatedField(isspace, **args))
 spriors = {'Gauss_0_A': ('lognorm', 55., 3.),
            'Gauss_0_x0': ('normal', 0.0, 0.5),
            'Gauss_0_y0': ('normal', 0.0, 0.5),
-           'Gauss_0_a00': ('lognorm', .70, 0.2),
-           'Gauss_0_a11': ('lognorm', .70, 0.2)}
+           'Gauss_0_a00': ('lognorm', .60, 0.3),
+           'Gauss_0_a11': ('lognorm', .60, 0.3)}
 sprior = PriorTransform(spriors)
 smodel = ift.JaxOperator(
     sprior.domain,
@@ -291,31 +291,60 @@ def get_gaussian_psf(domain, var):
     log_psf = - (0.5 / var) * (X ** 2 + Y ** 2)
     log_kernel = ift.makeField(domain, log_psf)
     log_kernel = log_kernel # - np.log(log_kernel.exp().integrate().val)
-    p = ift.Plot()
-    p.add(log_kernel)
-    p.add(log_kernel.exp())
-    p.output()
+    # p = ift.Plot()
+    # p.add(log_kernel)
+    # p.add(log_kernel.exp())
+    # p.output()
     return log_kernel
 
 
 
 # Convergence Model
 args = {
-    'offset_mean': 1,
+    # 'offset_mean': -0.9,
+    # 'offset_std': (1e-5, 1e-6),
+    'offset_mean': 0,
     'offset_std': (1e-2, 1e-6),
     # Amplitude of field fluctuations
-    'fluctuations': (2.0, 1e-1),  # 1.0, 1e-2
+    'fluctuations': (1.0, 1e-2),  # 1.0, 1e-2
     # Exponent of power law power spectrum component
-    'loglogavgslope': (-5., 0.8),  # -6.0, 1
+    'loglogavgslope': (-6., 0.7),  # -6.0, 1
     # Amplitude of integrated Wiener process power spectrum component
     'flexibility': (0.5, 1.0),  # 1.0, 0.5
     # How ragged the integrated Wiener process component is
     'asperity': (0.1, 0.5)  # 0.1, 0.5
 }
+# args = {
+#     'offset_mean': 1, # Gaussian
+#     'offset_std': (1e-2, 1e-6),
+#     # Amplitude of field fluctuations
+#     'fluctuations': (2.0, 1e-1),  # 1.0, 1e-2
+#     # Exponent of power law power spectrum component
+#     'loglogavgslope': (-5., 0.8),  # -6.0, 1
+#     # Amplitude of integrated Wiener process power spectrum component
+#     'flexibility': (0.5, 1.0),  # 1.0, 0.5
+#     # How ragged the integrated Wiener process component is
+#     'asperity': (0.1, 0.5)  # 0.1, 0.5
+# }
 correlated_convergence = ift.SimpleCorrelatedField(isspace, **args)
-gaussian_convergence = ift.Adder(get_gaussian_psf(isspace, 4e4))
 
-convergence_model = (gaussian_convergence @ correlated_convergence).exp()
+# Multiplier
+convergence_check = get_gaussian_psf(isspace, 4e4)
+gaussian_convergence = ift.Adder(convergence_check)
+adder = gaussian_convergence
+
+cnfw = cf.CircularNfw(detectorspace, xy0=np.array((0, 0)), fixed=True)
+nfw_convergence = ift.Field.from_raw(
+    isspace, np.log(cnfw.convergence_field(
+        {'fCNFW_0_b': np.array(1.5).reshape(1),
+         'fCNFW_0_r_s': np.array(0.5).reshape(1)}))
+)
+convergence_check = nfw_convergence
+nfw_convergence = ift.Adder(nfw_convergence)
+adder = nfw_convergence
+
+
+convergence_model = (adder @ correlated_convergence).exp()
 
 
 tmpdeflection = cf.DeflectionAngle(detectorspace)
@@ -329,7 +358,6 @@ deflection = ift.JaxLinearOperator(
 
 nfw = cf.CircularNfw(detectorspace)
 nfwpos = {'CNFW_0_b': 1.0, 'CNFW_0_r_s': 0.3, 'CNFW_0_x0': 0.0, 'CNFW_0_y0': 1.5}
-
 cdata = dpie.convergence_field(lpostrue)  # + nfw.convergence_field(nfwpos)
 ddata = dpie.deflection_field(lpostrue)  # + nfw.deflection_field(nfwpos)
 
@@ -351,7 +379,7 @@ fullmodel = trans @ Re @ interpolator @ (
     diffuse.ducktape_left('source')
 )
 
-
+imargs = {'extent': detectorspace.extent}
 for ii in range(10):
     priorpos = ift.from_random(fullmodel.domain)
     tryer = fullmodel(priorpos)
@@ -361,42 +389,45 @@ for ii in range(10):
 
     fig, axes = plt.subplots(2, 4)
 
-    im = axes[0, 0].imshow(source.val)
+    im = axes[0, 0].imshow(source.val, **imargs)
     plt.colorbar(im , ax=axes[0, 0])
     axes[0, 0].set_title('s')
 
-    im = axes[0, 1].imshow(tryer.val)
+    im = axes[0, 1].imshow(tryer.val, **imargs)
     plt.colorbar(im , ax=axes[0, 1])
     axes[0, 1].set_title('Ls')
 
-    im = axes[0, 2].imshow(data.val)
+    im = axes[0, 2].imshow(data.val, **imargs)
     plt.colorbar(im, ax=axes[0, 2])
     axes[0, 2].set_title('data')
 
-    im = axes[1, 0].imshow(conv.val)
+    im = axes[1, 0].imshow(conv.val, **imargs)
     plt.colorbar(im, ax=axes[1, 0])
     axes[1, 0].set_title('Kappa (convergence)')
 
-    im = axes[1, 1].imshow(np.hypot(*defl.val).reshape(128, 128))
+    im = axes[1, 1].imshow(np.hypot(*defl.val).reshape(128, 128),
+                           vmax=(np.hypot(*ddata)).max(),
+                           **imargs)
     plt.colorbar(im, ax=axes[1, 1])
     axes[1, 1].set_title('alpha (deflectionangle)')
 
-    im = axes[1, 2].imshow(np.hypot(*ddata).reshape(128, 128))
+    im = axes[1, 2].imshow(np.hypot(*ddata).reshape(128, 128), **imargs)
     plt.colorbar(im, ax=axes[1, 2])
     axes[1, 2].set_title('alpha_true (deflectionangle)')
 
-    conv = (correlated_convergence.force(priorpos))
-    im = axes[0, 3].imshow(conv.val)
+    conv = (correlated_convergence.force(priorpos).exp())
+    im = axes[0, 3].imshow(conv.val, **imargs)
     plt.colorbar(im, ax=axes[0, 3])
-    axes[0, 3].set_title('conv_true (alphacorr)')
+    axes[0, 3].set_title('convergence correlated')
 
-    alphacorr = deflection(correlated_convergence.force(priorpos)).val
-    im = axes[1, 3].imshow(np.hypot(*alphacorr).reshape(128, 128))
+    im = axes[1, 3].imshow(
+        np.hypot(*(deflection(convergence_check.exp()).val.reshape(2, 128, 128))),
+        vmax=(np.hypot(*ddata)).max(),
+        **imargs)
     plt.colorbar(im, ax=axes[1, 3])
-    axes[1, 3].set_title('alpha_true (alphacorr)')
+    axes[1, 3].set_title('convergence adder')
 
     plt.show()
-
 
 # data = fullmodel(priorpostrue)
 # data = So.brightness_point(ddata, spostrue)
@@ -418,7 +449,7 @@ ic_newton = ift.AbsDeltaEnergyController(name='Newton', deltaE=0.1, iteration_li
 minimizer = ift.NewtonCG(ic_newton)
 
 
-outputdir = 'output/fullmodel/gauss_convergence3'
+outputdir = 'output/fullmodel/gauss_nfwconvergence'
 
 def deflection_check(samples_list, ii):
     mean, var = samples_list.sample_stat()
@@ -429,15 +460,19 @@ def deflection_check(samples_list, ii):
     vmax = np.hypot(*ddata).max()
     fig, axes = plt.subplots(2, 3, figsize=(19, 10))
     ims = np.zeros_like(axes)
-    ims[0, 0] = axes[0, 0].imshow(cdata, origin='lower',  vmin=cdata.min(), vmax=cdata.max())  # norm=LogNorm(vmax=cdata.max(),vmin=cdata.min()))
-    ims[0, 1] = axes[0, 1].imshow(convergence, origin='lower', vmax=cdata.max(),vmin=cdata.min())  # norm=LogNorm(vmax=cdata.max(),vmin=cdata.min()))
+    ims[0, 0] = axes[0, 0].imshow(
+        cdata, origin='lower',  vmin=cdata.min(), vmax=cdata.max(), extent=detectorspace.extent)  # norm=LogNorm(vmax=cdata.max(),vmin=cdata.min()))
+    ims[0, 1] = axes[0, 1].imshow(
+        convergence, origin='lower', vmax=cdata.max(), vmin=cdata.min(), extent=detectorspace.extent)  # norm=LogNorm(vmax=cdata.max(),vmin=cdata.min()))
     ims[0, 2] = axes[0, 2].imshow(
-        (cdata-convergence)/cdata.max(), origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3)
-    ims[1, 0] = axes[1, 0].imshow(np.hypot(*ddata), vmin=-0.10, origin='lower', vmax=vmax)
-    ims[1, 1] = axes[1, 1].imshow(np.hypot(*deflectionf), vmin=-0.10, origin='lower', vmax=vmax)
+        (cdata-convergence)/cdata.max(), origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3, extent=detectorspace.extent)
+    ims[1, 0] = axes[1, 0].imshow(
+        np.hypot(*ddata), vmin=-0.10, origin='lower', vmax=vmax, extent=detectorspace.extent)
+    ims[1, 1] = axes[1, 1].imshow(
+        np.hypot(*deflectionf), vmin=-0.10, origin='lower', vmax=vmax, extent=detectorspace.extent)
     ims[1, 2] = axes[1, 2].imshow(
         np.hypot(*(ddata-deflectionf))/vmax,
-        vmin=-0.3, vmax=0.3, origin='lower', cmap='RdBu_r')
+        vmin=-0.3, vmax=0.3, origin='lower', cmap='RdBu_r', extent=detectorspace.extent)
     axes[0, 0].set_title('convergence')
     axes[0, 1].set_title('rec')
     axes[0, 2].set_title('(convergence - rec)/maxconvergence')
@@ -462,15 +497,19 @@ def Ls_check(samples_list, ii):
 
     fig, axes = plt.subplots(2, 3, figsize=(19, 10))
     ims = np.zeros_like(axes)
-    ims[0, 0] = axes[0, 0].imshow(s, origin='lower', vmin=0, vmax=s.max())
-    ims[0, 1] = axes[0, 1].imshow(source_reconstruction, origin='lower', vmin=0, vmax=s.max())
+    ims[0, 0] = axes[0, 0].imshow(
+        s, origin='lower', vmin=0, vmax=s.max(), extent=detectorspace.extent)
+    ims[0, 1] = axes[0, 1].imshow(
+        source_reconstruction, origin='lower', vmin=0, vmax=s.max(), extent=detectorspace.extent)
     ims[0, 2] = axes[0, 2].imshow(
-        (s-source_reconstruction)/s.max(), origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3)
-    ims[1, 0] = axes[1, 0].imshow(data.val, vmin=-0.10, origin='lower', vmax=data.val.max())
-    ims[1, 1] = axes[1, 1].imshow(dfield, vmin=-0.10, origin='lower', vmax=data.val.max())
+        (s-source_reconstruction)/s.max(), origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3, extent=detectorspace.extent)
+    ims[1, 0] = axes[1, 0].imshow(
+        data.val, vmin=-0.10, origin='lower', vmax=data.val.max(), extent=detectorspace.extent)
+    ims[1, 1] = axes[1, 1].imshow(
+        dfield, vmin=-0.10, origin='lower', vmax=data.val.max(), extent=detectorspace.extent)
     ims[1, 2] = axes[1, 2].imshow(
         (data.val-dfield)/noise_scale,
-        vmin=-3, vmax=3, origin='lower', cmap='RdBu_r')
+        vmin=-3, vmax=3, origin='lower', cmap='RdBu_r', extent=detectorspace.extent)
     axes[0, 0].set_title('source')
     axes[0, 1].set_title('rec')
     axes[0, 2].set_title('source - rec')
