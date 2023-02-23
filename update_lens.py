@@ -8,8 +8,7 @@ import jax.numpy as jnp
 from jax import jit
 
 from source_fwd import (
-    save_fits, load_fits, Blurring, lens_to_params)
-from image_positions.image_positions import Interpolator
+    save_fits, load_fits, Blurring, lens_to_params, smoother)
 from scipy.interpolate import RectBivariateSpline
 from os.path import join, exists
 
@@ -22,6 +21,29 @@ import cluster_fits as cf
 import yaml
 import sys
 from sys import exit
+
+
+def jax_gaussian(domain):
+    dist_x = domain.distances[0]
+    dist_y = domain.distances[1]
+
+    # Periodic Boundary conditions
+    x_ax = np.arange(domain.shape[0]) * dist_x
+    # x_ax = np.minimum(x_ax, domain.shape[0] - x_ax) * dist_x
+    y_ax = np.arange(domain.shape[1]) * dist_x
+    # y_ax = np.minimum(y_ax, domain.shape[1] - y_ax) * dist_y
+
+    center = (domain.shape[0]//2,)*2
+    x_ax -= center[0] * dist_x
+    y_ax -= center[1] * dist_y
+    X, Y = jnp.meshgrid(x_ax, y_ax, indexing='ij')
+
+    def gaussian(var):
+        return - (0.5 / var) * (X ** 2 + Y ** 2)
+
+    # normalized psf
+    return gaussian
+
 
 
 class Reshaper(ift.LinearOperator):
@@ -40,6 +62,35 @@ class Reshaper(ift.LinearOperator):
             return ift.Field.from_raw(
                 self._domain, x.val.reshape(self._domain.shape)
             )
+
+
+def get_gaussian_psf(domain, var):
+    # FIXME: cleanup -> refactor into get_gaussian_kernel
+    dist_x = domain.distances[0]
+    dist_y = domain.distances[1]
+
+    # Periodic Boundary conditions
+    x_ax = np.arange(domain.shape[0])
+    # x_ax = np.minimum(x_ax, domain.shape[0] - x_ax) * dist_x
+    y_ax = np.arange(domain.shape[1])
+    # y_ax = np.minimum(y_ax, domain.shape[1] - y_ax) * dist_y
+
+    center = (domain.shape[0]//2,)*2
+    x_ax -= center[0]
+    y_ax -= center[1]
+    X, Y = np.meshgrid(x_ax, y_ax, indexing='ij')
+
+    var *= domain.scalar_dvol  # ensures that the variance parameter is specified with respect to the
+
+    # normalized psf
+    log_psf = - (0.5 / var) * (X ** 2 + Y ** 2)
+    log_kernel = ift.makeField(domain, log_psf)
+    log_kernel = log_kernel # - np.log(log_kernel.exp().integrate().val)
+    # p = ift.Plot()
+    # p.add(log_kernel)
+    # p.add(log_kernel.exp())
+    # p.output()
+    return log_kernel
 
 
 np.random.seed(41)
@@ -67,17 +118,44 @@ spostrue = {'Gauss_0_A': array([20.0]),
             'Gauss_0_a11': array([0.14])}
 
 
+nfw = cf.CircularNfw(detectorspace)
+nfwpos = {'CNFW_0_b': 1., 'CNFW_0_r_s': 0.3, 'CNFW_0_x0': 0.0, 'CNFW_0_y0': 1.5}
+lpostrue.update(nfwpos)
+model = dpie  # + nfw
+cdata = model.convergence_field(lpostrue)
+ddata = model.deflection_field(lpostrue)
+
+
+source = np.load(
+    '/home/jruestig/pro/python/source_fwd/fits/source_catalogue/150_positions.npy',
+    allow_pickle=True
+).item()['bacco_34'][0]['source']
+
+
+S = RectBivariateSpline(
+    cf.Space(source.shape, 0.04).xycoords[1, :, 0],
+    cf.Space(source.shape, 0.04).xycoords[0, 0, :],
+    source)
 
 s = So.brightness_point(detectorspace.xycoords, spostrue)
-Ls = So.brightness_point(detectorspace.xycoords - dpie.deflection_field(lpostrue), spostrue)
+Ls = So.brightness_point(detectorspace.xycoords - model.deflection_field(lpostrue), spostrue)
+s = S(*(detectorspace.xycoords), grid=False)*8
+Ls = S(*(detectorspace.xycoords - model.deflection_field(lpostrue)), grid=False)*8
+
 
 noise = np.random.normal(size=Ls.shape, scale=noise_scale)
 d = Ls + noise
 
-# fig, (a, b) = plt.subplots(1, 2)
-# a.imshow(s)
-# b.imshow(Ls+noise)
-# plt.show()
+snrmask = (Blurring(d, smoother) > 2*noise_scale)
+SNR = d[snrmask].sum()/(noise_scale*np.sqrt(snrmask.sum()))
+
+fig, axes = plt.subplots(2, 2)
+axes[0, 0].imshow(s)
+axes[0, 1].imshow(Ls+noise)
+axes[0, 1].set_title(SNR)
+axes[1, 0].imshow(cdata, norm=LogNorm())
+axes[1, 1].imshow(np.hypot(*ddata))
+plt.show()
 
 
 # SPACES
@@ -109,20 +187,37 @@ lmodel = ift.JaxOperator(
 )
 
 
-# SOURCE MODEL
-args = {
-    'offset_mean': 0,
-    'offset_std': (1e-3, 1e-6),
-    # Amplitude of field fluctuations
-    'fluctuations': (3., 1e-2),  # 1.0, 1e-2
-    # Exponent of power law power spectrum component
-    'loglogavgslope': (-6., 0.4),  # -6.0, 1
-    # Amplitude of integrated Wiener process power spectrum component
-    'flexibility': (1, 1.5),  # 1.0, 0.5
-    # How ragged the integrated Wiener process component is
-    'asperity': (0.1, 0.5)  # 0.1, 0.5
+# # SOURCE MODEL
+
+cf_make_pars = {
+    'offset_mean': 0.,
+    'offset_std': (1e-1, 1e-4),
 }
-diffuse = ift.exp(ift.SimpleCorrelatedField(isspace, **args))
+
+cf_fluct_pars = {
+    # 'target_subdomain': isspace,
+    'scale': (1e-1, 1e-1),
+    'cutoff': (1., 1e-1),
+    'loglogslope': (-5.0, 5e-1)
+}
+
+var = ift.LognormalTransform(mean=0.1, sigma=0.07, key='source_size', N_copies=1).ducktape_left('size')
+G = jax_gaussian(isspace)
+Gift = ift.JaxOperator(
+    var.target,
+    isspace,
+    lambda x: G(x['size'])
+)
+source_mean = Gift @ var
+
+source_maker = ift.CorrelatedFieldMaker('source_')
+source_maker.set_amplitude_total_offset(**cf_make_pars)
+source_maker.add_fluctuations_matern(isspace, **cf_fluct_pars)
+source = source_maker.finalize()
+# source_ps = source_maker.power_spectrum
+# source_mean = ift.Adder(get_gaussian_psf(isspace, .1))
+
+source_diffuse = (source_mean + source).exp()
 
 
 # def pow_spec_source(k):
@@ -134,18 +229,20 @@ diffuse = ift.exp(ift.SimpleCorrelatedField(isspace, **args))
 # correl_source = pd(ift.PS_field(pow_space, pow_spec_source))
 # sc = ift.exp(HT(ift.makeOp(correl_source).ducktape('source')))
 # diffuse = sc
-spriors = {'Gauss_0_A': ('lognorm', 55., 3.),
-           'Gauss_0_x0': ('normal', 0.0, 0.5),
-           'Gauss_0_y0': ('normal', 0.0, 0.5),
-           'Gauss_0_a00': ('lognorm', .60, 0.3),
-           'Gauss_0_a11': ('lognorm', .60, 0.3)}
-sprior = PriorTransform(spriors)
-smodel = ift.JaxOperator(
-    sprior.domain,
-    isspace,
-    lambda x: So.brightness_field(x)
-)
-diffuse = smodel @ sprior
+
+# # Source
+# spriors = {'Gauss_0_A': ('lognorm', 55., 3.),
+#            'Gauss_0_x0': ('normal', 0.0, 0.5),
+#            'Gauss_0_y0': ('normal', 0.0, 0.5),
+#            'Gauss_0_a00': ('lognorm', .60, 0.3),
+#            'Gauss_0_a11': ('lognorm', .60, 0.3)}
+# sprior = PriorTransform(spriors)
+# smodel = ift.JaxOperator(
+#     sprior.domain,
+#     isspace,
+#     lambda x: So.brightness_field(x)
+# )
+# source_diffuse = smodel @ sprior
 
 
 # FULL MODEL
@@ -154,37 +251,37 @@ trans = Transponator(isspace)
 Re = Reshaper(interpolator.target, dspace)
 
 fullmodel = trans @ Re @ interpolator @ (
-    lmodel.ducktape_left('lens') @ lprior + diffuse.ducktape_left('source')
+    lmodel.ducktape_left('lens') @ lprior + source_diffuse.ducktape_left('source')
 )
 
-# Fit postrue to prior
-strue = {}
-strue.update(spostrue)
-strue.update(lpostrue)
-postrue = ift.MultiField.from_raw(fullmodel.domain, strue)
-# # position = ift.full(fullmodel.domain, 0.)
-# # N = ift.ScalingOperator(fullmodel.domain, (1e-8)**2, sampling_dtype=float)
-# # like = ift.GaussianEnergy(data=postrue, inverse_covariance=N.inverse) @ (lprior+sprior)
-# # print('Prior Position find')
-# # posterior = ift.EnergyAdapter(
-# #     position, ift.StandardHamiltonian(like))
-# # ic_newton = ift.AbsDeltaEnergyController(deltaE=0.005)
-# # minimizer = ift.L_BFGS(ic_newton)
-# # posterior, _ = minimizer(posterior)
-# # priorpostrue = posterior.position
-# priorpostrue = {'Gauss_0_A': array([2.99569814]),
-#                 'Gauss_0_a00': array([-1.90295513]),
-#                 'Gauss_0_a11': array([-0.91546654]),
-#                 'Gauss_0_x0': array([0.48000001]),
-#                 'Gauss_0_y0': array([0.34000001]),
-#                 'dPIE_0_b': array([0.54486098]),
-#                 'dPIE_0_q': array([-0.71816616]),
-#                 'dPIE_0_r_c': array([-0.89343462]),
-#                 'dPIE_0_r_s': array([-2.34824404]),
-#                 'dPIE_0_th': array([0.77779194]),
-#                 'dPIE_0_x0': array([0.32061394]),
-#                 'dPIE_0_y0': array([0.54482399])}
-# priorpostrue = ift.MultiField.from_raw(fullmodel.domain, priorpostrue)
+# # Fit postrue to prior
+# strue = {}
+# strue.update(spostrue)
+# strue.update(lpostrue)
+# postrue = ift.MultiField.from_raw(fullmodel.domain, strue)
+# # # position = ift.full(fullmodel.domain, 0.)
+# # # N = ift.ScalingOperator(fullmodel.domain, (1e-8)**2, sampling_dtype=float)
+# # # like = ift.GaussianEnergy(data=postrue, inverse_covariance=N.inverse) @ (lprior+sprior)
+# # # print('Prior Position find')
+# # # posterior = ift.EnergyAdapter(
+# # #     position, ift.StandardHamiltonian(like))
+# # # ic_newton = ift.AbsDeltaEnergyController(deltaE=0.005)
+# # # minimizer = ift.L_BFGS(ic_newton)
+# # # posterior, _ = minimizer(posterior)
+# # # priorpostrue = posterior.position
+# # priorpostrue = {'Gauss_0_A': array([2.99569814]),
+# #                 'Gauss_0_a00': array([-1.90295513]),
+# #                 'Gauss_0_a11': array([-0.91546654]),
+# #                 'Gauss_0_x0': array([0.48000001]),
+# #                 'Gauss_0_y0': array([0.34000001]),
+# #                 'dPIE_0_b': array([0.54486098]),
+# #                 'dPIE_0_q': array([-0.71816616]),
+# #                 'dPIE_0_r_c': array([-0.89343462]),
+# #                 'dPIE_0_r_s': array([-2.34824404]),
+# #                 'dPIE_0_th': array([0.77779194]),
+# #                 'dPIE_0_x0': array([0.32061394]),
+# #                 'dPIE_0_y0': array([0.54482399])}
+# # priorpostrue = ift.MultiField.from_raw(fullmodel.domain, priorpostrue)
 
 # posreally = (lprior + sprior)(priorpostrue)
 
@@ -230,7 +327,7 @@ global_iterations = 10
 #     for key, val in sprior.force(mean).val.items():
 #         print(key, postrue.val[key][0], val[0], sep='\t')
 
-#     source_reconstruction = diffuse.force(mean).val
+#     source_reconstruction = source_diffuse.force(mean).val
 #     dfield = fullmodel(mean).val
 
 #     fig, axes = plt.subplots(2, 3, figsize=(19, 10))
@@ -269,35 +366,6 @@ global_iterations = 10
 #     dry_run=False,
 # )
 
-def get_gaussian_psf(domain, var):
-    # FIXME: cleanup -> refactor into get_gaussian_kernel
-    dist_x = domain.distances[0]
-    dist_y = domain.distances[1]
-
-    # Periodic Boundary conditions
-    x_ax = np.arange(domain.shape[0])
-    # x_ax = np.minimum(x_ax, domain.shape[0] - x_ax) * dist_x
-    y_ax = np.arange(domain.shape[1])
-    # y_ax = np.minimum(y_ax, domain.shape[1] - y_ax) * dist_y
-
-    center = (domain.shape[0]//2,)*2
-    x_ax -= center[0]
-    y_ax -= center[1]
-    X, Y = np.meshgrid(x_ax, y_ax, indexing='ij')
-
-    var *= domain.scalar_dvol  # ensures that the variance parameter is specified with respect to the
-
-    # normalized psf
-    log_psf = - (0.5 / var) * (X ** 2 + Y ** 2)
-    log_kernel = ift.makeField(domain, log_psf)
-    log_kernel = log_kernel # - np.log(log_kernel.exp().integrate().val)
-    # p = ift.Plot()
-    # p.add(log_kernel)
-    # p.add(log_kernel.exp())
-    # p.output()
-    return log_kernel
-
-
 
 # Convergence Model
 args = {
@@ -306,7 +374,7 @@ args = {
     'offset_mean': 0,
     'offset_std': (1e-2, 1e-6),
     # Amplitude of field fluctuations
-    'fluctuations': (1.0, 1e-2),  # 1.0, 1e-2
+    'fluctuations': (1.0, 5e-2),  # 1.0, 1e-2
     # Exponent of power law power spectrum component
     'loglogavgslope': (-6., 0.7),  # -6.0, 1
     # Amplitude of integrated Wiener process power spectrum component
@@ -356,11 +424,6 @@ deflection = ift.JaxLinearOperator(
 )
 
 
-nfw = cf.CircularNfw(detectorspace)
-nfwpos = {'CNFW_0_b': 1.0, 'CNFW_0_r_s': 0.3, 'CNFW_0_x0': 0.0, 'CNFW_0_y0': 1.5}
-cdata = dpie.convergence_field(lpostrue)  # + nfw.convergence_field(nfwpos)
-ddata = dpie.deflection_field(lpostrue)  # + nfw.deflection_field(nfwpos)
-
 
 tmpdeflection = cf.DeflectionAngle(detectorspace)
 
@@ -376,24 +439,24 @@ lensmodel = ift.JaxOperator(
 lens = lensmodel @ convergence_model
 fullmodel = trans @ Re @ interpolator @ (
     lens.ducktape_left('lens') +
-    diffuse.ducktape_left('source')
+    source_diffuse.ducktape_left('source')
 )
 
 imargs = {'extent': detectorspace.extent}
 for ii in range(10):
     priorpos = ift.from_random(fullmodel.domain)
     tryer = fullmodel(priorpos)
-    source = diffuse.force(priorpos)
+    source = source_diffuse.force(priorpos)
     conv = convergence_model.force(priorpos)
     defl = deflection(convergence_model.force(priorpos))
 
     fig, axes = plt.subplots(2, 4)
 
-    im = axes[0, 0].imshow(source.val, **imargs)
+    im = axes[0, 0].imshow(source.val.T, **imargs)
     plt.colorbar(im , ax=axes[0, 0])
     axes[0, 0].set_title('s')
 
-    im = axes[0, 1].imshow(tryer.val, **imargs)
+    im = axes[0, 1].imshow(tryer.val.T, **imargs)
     plt.colorbar(im , ax=axes[0, 1])
     axes[0, 1].set_title('Ls')
 
@@ -401,11 +464,11 @@ for ii in range(10):
     plt.colorbar(im, ax=axes[0, 2])
     axes[0, 2].set_title('data')
 
-    im = axes[1, 0].imshow(conv.val, **imargs)
+    im = axes[1, 0].imshow(conv.val.T, **imargs)
     plt.colorbar(im, ax=axes[1, 0])
     axes[1, 0].set_title('Kappa (convergence)')
 
-    im = axes[1, 1].imshow(np.hypot(*defl.val).reshape(128, 128),
+    im = axes[1, 1].imshow(np.hypot(*defl.val).reshape(128, 128).T,
                            vmax=(np.hypot(*ddata)).max(),
                            **imargs)
     plt.colorbar(im, ax=axes[1, 1])
@@ -416,12 +479,12 @@ for ii in range(10):
     axes[1, 2].set_title('alpha_true (deflectionangle)')
 
     conv = (correlated_convergence.force(priorpos).exp())
-    im = axes[0, 3].imshow(conv.val, **imargs)
+    im = axes[0, 3].imshow(conv.val.T, **imargs)
     plt.colorbar(im, ax=axes[0, 3])
     axes[0, 3].set_title('convergence correlated')
 
     im = axes[1, 3].imshow(
-        np.hypot(*(deflection(convergence_check.exp()).val.reshape(2, 128, 128))),
+        np.hypot(*(deflection(convergence_check.exp()).val.reshape(2, 128, 128))).T,
         vmax=(np.hypot(*ddata)).max(),
         **imargs)
     plt.colorbar(im, ax=axes[1, 3])
@@ -449,7 +512,7 @@ ic_newton = ift.AbsDeltaEnergyController(name='Newton', deltaE=0.1, iteration_li
 minimizer = ift.NewtonCG(ic_newton)
 
 
-outputdir = 'output/fullmodel/gauss_nfwconvergence'
+outputdir = 'output/fullmodel/source_nfwconvergence'
 
 def deflection_check(samples_list, ii):
     mean, var = samples_list.sample_stat()
@@ -488,11 +551,12 @@ def deflection_check(samples_list, ii):
 
 def Ls_check(samples_list, ii):
     mean, var = samples_list.sample_stat()
+    std = var.sqrt().val
 
-    for key, val in sprior.force(mean).val.items():
-        print(key, postrue.val[key][0], val[0], sep='\t')
+    # for key, val in sprior.force(mean).val.items():
+    #     print(key, postrue.val[key][0], val[0], sep='\t')
 
-    source_reconstruction = diffuse.force(mean).val
+    source_reconstruction = source_diffuse.force(mean).val
     dfield = fullmodel(mean).val
 
     fig, axes = plt.subplots(2, 3, figsize=(19, 10))
@@ -512,7 +576,7 @@ def Ls_check(samples_list, ii):
         vmin=-3, vmax=3, origin='lower', cmap='RdBu_r', extent=detectorspace.extent)
     axes[0, 0].set_title('source')
     axes[0, 1].set_title('rec')
-    axes[0, 2].set_title('source - rec')
+    axes[0, 2].set_title('(source - rec)/std')
     axes[1, 0].set_title('data')
     axes[1, 1].set_title('BLs')
     axes[1, 2].set_title('(data - BLs)/noisescale')
