@@ -30,6 +30,7 @@ from sys import exit
 # - Build in lens-light
 # - Find a way to detect sub-structures (update z & b)
 # - What could be the correlation structure of the lens-profile
+# - Lens verschiebung als
 # -
 # - Try with smaller NFW substructures
 # - Try on real data
@@ -166,7 +167,7 @@ fig, axes = plt.subplots(2, 2)
 axes[0, 0].imshow(s, origin='lower')
 axes[0, 1].imshow(Ls+noise, origin='lower')
 axes[0, 1].set_title(SNR)
-axes[1, 0].imshow(cdata.T, norm=LogNorm(), origin='lower')
+axes[1, 0].imshow(cdata, norm=LogNorm(), origin='lower')
 axes[1, 1].imshow(np.hypot(*ddata), origin='lower')
 plt.show()
 
@@ -258,10 +259,9 @@ source_diffuse = (source_mean + source).exp()
 
 # FULL MODEL
 interpolator = Interpolation(isspace, 'source', pointsdomain, 'lens')
-trans = Transponator(isspace)
 Re = Reshaper(interpolator.target, dspace)
 
-fullmodel = trans @ Re @ interpolator @ (
+fullmodel = Re @ interpolator @ (
     lmodel.ducktape_left('lens') @ lprior + source_diffuse.ducktape_left('source')
 )
 
@@ -347,60 +347,60 @@ lensmodel = ift.JaxOperator(
 
 # Try source reconstruction
 lens = lensmodel @ convergence_model
-fullmodel = trans @ Re @ interpolator @ (
+fullmodel = Re @ interpolator @ (
     lens.ducktape_left('lens') +
     source_diffuse.ducktape_left('source')
 )
 
-imargs = {'extent': detectorspace.extent}
-for ii in range(10):
-    priorpos = ift.from_random(fullmodel.domain)
-    tryer = fullmodel(priorpos)
-    source = source_diffuse.force(priorpos)
-    conv = convergence_model.force(priorpos)
-    defl = deflection(convergence_model.force(priorpos))
+# imargs = {'extent': detectorspace.extent}
+# for ii in range(10):
+#     priorpos = ift.from_random(fullmodel.domain)
+#     tryer = fullmodel(priorpos)
+#     source = source_diffuse.force(priorpos)
+#     conv = convergence_model.force(priorpos)
+#     defl = deflection(convergence_model.force(priorpos))
 
-    fig, axes = plt.subplots(2, 4)
+#     fig, axes = plt.subplots(2, 4)
 
-    im = axes[0, 0].imshow(source.val.T, **imargs)
-    plt.colorbar(im , ax=axes[0, 0])
-    axes[0, 0].set_title('s')
+#     im = axes[0, 0].imshow(source.val.T, **imargs)
+#     plt.colorbar(im , ax=axes[0, 0])
+#     axes[0, 0].set_title('s')
 
-    im = axes[0, 1].imshow(tryer.val.T, **imargs)
-    plt.colorbar(im , ax=axes[0, 1])
-    axes[0, 1].set_title('Ls')
+#     im = axes[0, 1].imshow(tryer.val.T, **imargs)
+#     plt.colorbar(im , ax=axes[0, 1])
+#     axes[0, 1].set_title('Ls')
 
-    im = axes[0, 2].imshow(data.val, **imargs)
-    plt.colorbar(im, ax=axes[0, 2])
-    axes[0, 2].set_title('data')
+#     im = axes[0, 2].imshow(data.val, **imargs)
+#     plt.colorbar(im, ax=axes[0, 2])
+#     axes[0, 2].set_title('data')
 
-    im = axes[1, 0].imshow(conv.val.T, **imargs)
-    plt.colorbar(im, ax=axes[1, 0])
-    axes[1, 0].set_title('Kappa (convergence)')
+#     im = axes[1, 0].imshow(conv.val.T, **imargs)
+#     plt.colorbar(im, ax=axes[1, 0])
+#     axes[1, 0].set_title('Kappa (convergence)')
 
-    im = axes[1, 1].imshow(np.hypot(*defl.val).reshape(128, 128).T,
-                           vmax=(np.hypot(*ddata)).max(),
-                           **imargs)
-    plt.colorbar(im, ax=axes[1, 1])
-    axes[1, 1].set_title('alpha (deflectionangle)')
+#     im = axes[1, 1].imshow(np.hypot(*defl.val).reshape(128, 128).T,
+#                            vmax=(np.hypot(*ddata)).max(),
+#                            **imargs)
+#     plt.colorbar(im, ax=axes[1, 1])
+#     axes[1, 1].set_title('alpha (deflectionangle)')
 
-    im = axes[1, 2].imshow(np.hypot(*ddata).reshape(128, 128), **imargs)
-    plt.colorbar(im, ax=axes[1, 2])
-    axes[1, 2].set_title('alpha_true (deflectionangle)')
+#     im = axes[1, 2].imshow(np.hypot(*ddata).reshape(128, 128), **imargs)
+#     plt.colorbar(im, ax=axes[1, 2])
+#     axes[1, 2].set_title('alpha_true (deflectionangle)')
 
-    conv = (correlated_convergence.force(priorpos).exp())
-    im = axes[0, 3].imshow(conv.val.T, **imargs)
-    plt.colorbar(im, ax=axes[0, 3])
-    axes[0, 3].set_title('convergence correlated')
+#     conv = (correlated_convergence.force(priorpos).exp())
+#     im = axes[0, 3].imshow(conv.val.T, **imargs)
+#     plt.colorbar(im, ax=axes[0, 3])
+#     axes[0, 3].set_title('convergence correlated')
 
-    im = axes[1, 3].imshow(
-        np.hypot(*(deflection(convergence_check.exp()).val.reshape(2, 128, 128))).T,
-        vmax=(np.hypot(*ddata)).max(),
-        **imargs)
-    plt.colorbar(im, ax=axes[1, 3])
-    axes[1, 3].set_title('convergence adder')
+#     im = axes[1, 3].imshow(
+#         np.hypot(*(deflection(convergence_check.exp()).val.reshape(2, 128, 128))).T,
+#         vmax=(np.hypot(*ddata)).max(),
+#         **imargs)
+#     plt.colorbar(im, ax=axes[1, 3])
+#     axes[1, 3].set_title('convergence adder')
 
-    plt.show()
+#     plt.show()
 
 # data = fullmodel(priorpostrue)
 # data = So.brightness_point(ddata, spostrue)
@@ -422,24 +422,39 @@ ic_newton = ift.AbsDeltaEnergyController(name='Newton', deltaE=0.1, iteration_li
 minimizer = ift.NewtonCG(ic_newton)
 
 
-outputdir = 'output/fullmodel/source_substructure'
+outputdir = 'output/fullmodel/transpose_fix'
 
 
 def deflection_check(samples_list, ii):
     mean, var = samples_list.sample_stat()
 
-    #FIXME: Remove Transpose
-    convergence = convergence_model.force(mean).val.T
-    deflectionf = deflection(convergence_model.force(mean)).val.reshape(2, *isspace.shape)[::-1]
-    deflectionf = np.einsum('ijk->ikj', deflectionf)
+    convergence = convergence_model.force(mean).val
+    deflectionf = deflection(convergence_model.force(mean)).val.reshape(2, *isspace.shape)
+
+    # number_of_levels = 5
+    # levels = np.linspace(start=0.1, stop=1, num=number_of_levels)*cdata.max()
 
     vmax = np.hypot(*ddata).max()
     fig, axes = plt.subplots(2, 3, figsize=(19, 10))
+
+    # imc = axes[0, 0].contour(cdata, colors='red', levels=levels, origin='lower', extent=detectorspace.extent)
+    # axes[0, 0].contour(convergence, colors='orange', levels=levels, origin='lower', extent=detectorspace.extent)
+    # axes[0, 1].contour(cdata, colors='red', levels=levels, origin='lower', extent=detectorspace.extent)
+    # axes[0, 1].contour(convergence, colors='orange', levels=levels, origin='lower', extent=detectorspace.extent)
+
     ims = np.zeros_like(axes)
     ims[0, 0] = axes[0, 0].imshow(
-        cdata, origin='lower',  vmin=cdata.min(), vmax=cdata.max(), extent=detectorspace.extent)  # norm=LogNorm(vmax=cdata.max(),vmin=cdata.min()))
+        cdata,
+        origin='lower',
+        vmin=cdata.min(), vmax=cdata.max(),
+        cmap='RdYlBu_r',
+        extent=detectorspace.extent)  # norm=LogNorm(vmax=cdata.max(),vmin=cdata.min()))
     ims[0, 1] = axes[0, 1].imshow(
-        convergence, origin='lower', vmax=cdata.max(), vmin=cdata.min(), extent=detectorspace.extent)  # norm=LogNorm(vmax=cdata.max(),vmin=cdata.min()))
+        convergence,
+        origin='lower',
+        vmax=cdata.max(), vmin=cdata.min(),
+        cmap='RdYlBu_r',
+        extent=detectorspace.extent)  # norm=LogNorm(vmax=cdata.max(),vmin=cdata.min()))
     ims[0, 2] = axes[0, 2].imshow(
         (cdata-convergence)/cdata.max(), origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3, extent=detectorspace.extent)
     ims[1, 0] = axes[1, 0].imshow(
@@ -456,8 +471,11 @@ def deflection_check(samples_list, ii):
     axes[1, 0].set_title('deflection')
     axes[1, 1].set_title('reconstruction')
     axes[1, 2].set_title('(deflection - reconstruction)/maxdeflection')
-    for im, ax in zip(ims.flatten(), axes.flatten()):
-        plt.colorbar(im, ax=ax)
+    for ii, (im, ax) in enumerate(zip(ims.flatten(), axes.flatten())):
+        cb = plt.colorbar(im, ax=ax)
+        # if ii in [0, 1]:
+        #     cb.add_lines(imc)
+
     plt.tight_layout()
     plt.savefig(f'{outputdir}/deflection_KL_{ii}.png')
     plt.close()
@@ -466,11 +484,8 @@ def deflection_check(samples_list, ii):
 def Ls_check(samples_list, ii):
     mean, var = samples_list.sample_stat()
 
-    # for key, val in sprior.force(mean).val.items():
-    #     print(key, postrue.val[key][0], val[0], sep='\t')
-
-    source_reconstruction = source_diffuse.force(mean).val
-    source_std = source_diffuse.force(var).sqrt().val
+    source_reconstruction = source_diffuse.force(mean).val.T
+    source_std = source_diffuse.force(var).sqrt().val.T
     dfield = fullmodel(mean).val
 
     fig, axes = plt.subplots(2, 3, figsize=(19, 10))
@@ -480,7 +495,8 @@ def Ls_check(samples_list, ii):
     ims[0, 1] = axes[0, 1].imshow(
         source_reconstruction, origin='lower', vmin=0, vmax=s.max(), extent=detectorspace.extent)
     ims[0, 2] = axes[0, 2].imshow(
-        np.abs(s-source_reconstruction)/source_std, origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3, extent=detectorspace.extent)
+        (s-source_reconstruction)/s.max(),
+        origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3, extent=detectorspace.extent)
     ims[1, 0] = axes[1, 0].imshow(
         data.val, vmin=-0.10, origin='lower', vmax=data.val.max(), extent=detectorspace.extent)
     ims[1, 1] = axes[1, 1].imshow(
