@@ -28,6 +28,8 @@ from sys import exit
 # - Update NFW profile (x0, y0, rs)
 # - Find the transpose bug
 # - Build in lens-light
+# - Find a way to detect sub-structures (update z & b)
+# - What could be the correlation structure of the lens-profile
 # -
 # - Try with smaller NFW substructures
 # - Try on real data
@@ -331,7 +333,6 @@ deflection = ift.JaxLinearOperator(
     lambda x: tmpdeflection(x).reshape(2, -1),
     domain_dtype=float
 )
-
 
 
 tmpdeflection = cf.DeflectionAngle(detectorspace)
