@@ -23,6 +23,17 @@ import sys
 from sys import exit
 
 
+# TODO:
+# - Blurring with psf
+# - Update NFW profile (x0, y0, rs)
+# - Find the transpose bug
+# - Build in lens-light
+# -
+# - Try with smaller NFW substructures
+# - Try on real data
+# - Try with Aleksandra data
+
+
 def jax_gaussian(domain):
     dist_x = domain.distances[0]
     dist_y = domain.distances[1]
@@ -187,7 +198,6 @@ lmodel = ift.JaxOperator(
 
 
 # # SOURCE MODEL
-
 cf_make_pars = {
     'offset_mean': 0.,
     'offset_std': (1e-1, 1e-4),
@@ -253,47 +263,8 @@ fullmodel = trans @ Re @ interpolator @ (
     lmodel.ducktape_left('lens') @ lprior + source_diffuse.ducktape_left('source')
 )
 
-# # Fit postrue to prior
-# strue = {}
-# strue.update(spostrue)
-# strue.update(lpostrue)
-# postrue = ift.MultiField.from_raw(fullmodel.domain, strue)
-# # # position = ift.full(fullmodel.domain, 0.)
-# # # N = ift.ScalingOperator(fullmodel.domain, (1e-8)**2, sampling_dtype=float)
-# # # like = ift.GaussianEnergy(data=postrue, inverse_covariance=N.inverse) @ (lprior+sprior)
-# # # print('Prior Position find')
-# # # posterior = ift.EnergyAdapter(
-# # #     position, ift.StandardHamiltonian(like))
-# # # ic_newton = ift.AbsDeltaEnergyController(deltaE=0.005)
-# # # minimizer = ift.L_BFGS(ic_newton)
-# # # posterior, _ = minimizer(posterior)
-# # # priorpostrue = posterior.position
-# # priorpostrue = {'Gauss_0_A': array([2.99569814]),
-# #                 'Gauss_0_a00': array([-1.90295513]),
-# #                 'Gauss_0_a11': array([-0.91546654]),
-# #                 'Gauss_0_x0': array([0.48000001]),
-# #                 'Gauss_0_y0': array([0.34000001]),
-# #                 'dPIE_0_b': array([0.54486098]),
-# #                 'dPIE_0_q': array([-0.71816616]),
-# #                 'dPIE_0_r_c': array([-0.89343462]),
-# #                 'dPIE_0_r_s': array([-2.34824404]),
-# #                 'dPIE_0_th': array([0.77779194]),
-# #                 'dPIE_0_x0': array([0.32061394]),
-# #                 'dPIE_0_y0': array([0.54482399])}
-# # priorpostrue = ift.MultiField.from_raw(fullmodel.domain, priorpostrue)
-
-# posreally = (lprior + sprior)(priorpostrue)
-
-# for key, val in posreally.val.items():
-#     print(key, postrue.val[key][0], val[0], postrue.val[key][0]-val[0], sep='\t')
-
-
 # To data
 data = ift.makeField(dspace, d)
-
-# data = fullmodel(priorpostrue)
-# data = ift.makeField(dspace, data.val+noise)
-
 
 N = ift.ScalingOperator(dspace, noise_scale**2, sampling_dtype=float)
 
@@ -303,67 +274,6 @@ likelihood_energy = (
 
 
 global_iterations = 10
-
-# ic_sampling = ift.AbsDeltaEnergyController(name='linear', deltaE=0.1, iteration_limit=50)
-# ic_newton = ift.AbsDeltaEnergyController(name='Newton', deltaE=0.1, iteration_limit=20)
-# minimizer = ift.NewtonCG(ic_newton)
-# ic_sampling_nl = ift.AbsDeltaEnergyController(name='nonlinear', deltaE=0.5, iteration_limit=10)
-# minimizer_sampling = ift.NewtonCG(ic_sampling_nl)
-
-
-# def Nsamples(iteration):
-#     if iteration < 3:
-#         return 5
-#     else:
-#         return 8
-
-
-# def plot_check(samples_list, ii):
-#     mean, var = samples_list.sample_stat()
-
-#     for key, val in lprior.force(mean).val.items():
-#         print(key, postrue.val[key][0], val[0], sep='\t')
-#     for key, val in sprior.force(mean).val.items():
-#         print(key, postrue.val[key][0], val[0], sep='\t')
-
-#     source_reconstruction = source_diffuse.force(mean).val
-#     dfield = fullmodel(mean).val
-
-#     fig, axes = plt.subplots(2, 3, figsize=(19, 10))
-#     ims = np.zeros_like(axes)
-#     ims[0, 0] = axes[0, 0].imshow(s, origin='lower')
-#     ims[0, 1] = axes[0, 1].imshow(source_reconstruction, origin='lower')
-#     ims[0, 2] = axes[0, 2].imshow(
-#         s-source_reconstruction, origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3)
-#     ims[1, 0] = axes[1, 0].imshow(data.val, vmin=-0.10, origin='lower')
-#     ims[1, 1] = axes[1, 1].imshow(dfield, vmin=-0.10, origin='lower')
-#     ims[1, 2] = axes[1, 2].imshow(
-#         (data.val-dfield)/noise_scale,
-#         vmin=-3, vmax=3, origin='lower', cmap='RdBu_r')
-#     axes[0, 0].set_title('source')
-#     axes[0, 1].set_title('rec')
-#     axes[0, 2].set_title('source - rec')
-#     axes[1, 0].set_title('data')
-#     axes[1, 1].set_title('BLs')
-#     axes[1, 2].set_title('(data - BLs)/noisescale')
-#     for im, ax in zip(ims.flatten(), axes.flatten()):
-#         plt.colorbar(im, ax=ax)
-#     plt.tight_layout()
-#     plt.savefig(f'output/bla/fixsource/gauss_KL_{ii}.png')
-#     plt.close()
-
-
-# samples = ift.optimize_kl(
-#     likelihood_energy,
-#     global_iterations,
-#     Nsamples,
-#     minimizer,
-#     ic_sampling,
-#     minimizer_sampling,
-#     output_directory='output/bla/fixsource',
-#     inspect_callback=plot_check,
-#     dry_run=False,
-# )
 
 
 # Convergence Model
@@ -441,55 +351,55 @@ fullmodel = trans @ Re @ interpolator @ (
     source_diffuse.ducktape_left('source')
 )
 
-# imargs = {'extent': detectorspace.extent}
-# for ii in range(10):
-#     priorpos = ift.from_random(fullmodel.domain)
-#     tryer = fullmodel(priorpos)
-#     source = source_diffuse.force(priorpos)
-#     conv = convergence_model.force(priorpos)
-#     defl = deflection(convergence_model.force(priorpos))
+imargs = {'extent': detectorspace.extent}
+for ii in range(10):
+    priorpos = ift.from_random(fullmodel.domain)
+    tryer = fullmodel(priorpos)
+    source = source_diffuse.force(priorpos)
+    conv = convergence_model.force(priorpos)
+    defl = deflection(convergence_model.force(priorpos))
 
-#     fig, axes = plt.subplots(2, 4)
+    fig, axes = plt.subplots(2, 4)
 
-#     im = axes[0, 0].imshow(source.val.T, **imargs)
-#     plt.colorbar(im , ax=axes[0, 0])
-#     axes[0, 0].set_title('s')
+    im = axes[0, 0].imshow(source.val.T, **imargs)
+    plt.colorbar(im , ax=axes[0, 0])
+    axes[0, 0].set_title('s')
 
-#     im = axes[0, 1].imshow(tryer.val.T, **imargs)
-#     plt.colorbar(im , ax=axes[0, 1])
-#     axes[0, 1].set_title('Ls')
+    im = axes[0, 1].imshow(tryer.val.T, **imargs)
+    plt.colorbar(im , ax=axes[0, 1])
+    axes[0, 1].set_title('Ls')
 
-#     im = axes[0, 2].imshow(data.val, **imargs)
-#     plt.colorbar(im, ax=axes[0, 2])
-#     axes[0, 2].set_title('data')
+    im = axes[0, 2].imshow(data.val, **imargs)
+    plt.colorbar(im, ax=axes[0, 2])
+    axes[0, 2].set_title('data')
 
-#     im = axes[1, 0].imshow(conv.val.T, **imargs)
-#     plt.colorbar(im, ax=axes[1, 0])
-#     axes[1, 0].set_title('Kappa (convergence)')
+    im = axes[1, 0].imshow(conv.val.T, **imargs)
+    plt.colorbar(im, ax=axes[1, 0])
+    axes[1, 0].set_title('Kappa (convergence)')
 
-#     im = axes[1, 1].imshow(np.hypot(*defl.val).reshape(128, 128).T,
-#                            vmax=(np.hypot(*ddata)).max(),
-#                            **imargs)
-#     plt.colorbar(im, ax=axes[1, 1])
-#     axes[1, 1].set_title('alpha (deflectionangle)')
+    im = axes[1, 1].imshow(np.hypot(*defl.val).reshape(128, 128).T,
+                           vmax=(np.hypot(*ddata)).max(),
+                           **imargs)
+    plt.colorbar(im, ax=axes[1, 1])
+    axes[1, 1].set_title('alpha (deflectionangle)')
 
-#     im = axes[1, 2].imshow(np.hypot(*ddata).reshape(128, 128), **imargs)
-#     plt.colorbar(im, ax=axes[1, 2])
-#     axes[1, 2].set_title('alpha_true (deflectionangle)')
+    im = axes[1, 2].imshow(np.hypot(*ddata).reshape(128, 128), **imargs)
+    plt.colorbar(im, ax=axes[1, 2])
+    axes[1, 2].set_title('alpha_true (deflectionangle)')
 
-#     conv = (correlated_convergence.force(priorpos).exp())
-#     im = axes[0, 3].imshow(conv.val.T, **imargs)
-#     plt.colorbar(im, ax=axes[0, 3])
-#     axes[0, 3].set_title('convergence correlated')
+    conv = (correlated_convergence.force(priorpos).exp())
+    im = axes[0, 3].imshow(conv.val.T, **imargs)
+    plt.colorbar(im, ax=axes[0, 3])
+    axes[0, 3].set_title('convergence correlated')
 
-#     im = axes[1, 3].imshow(
-#         np.hypot(*(deflection(convergence_check.exp()).val.reshape(2, 128, 128))).T,
-#         vmax=(np.hypot(*ddata)).max(),
-#         **imargs)
-#     plt.colorbar(im, ax=axes[1, 3])
-#     axes[1, 3].set_title('convergence adder')
+    im = axes[1, 3].imshow(
+        np.hypot(*(deflection(convergence_check.exp()).val.reshape(2, 128, 128))).T,
+        vmax=(np.hypot(*ddata)).max(),
+        **imargs)
+    plt.colorbar(im, ax=axes[1, 3])
+    axes[1, 3].set_title('convergence adder')
 
-#     plt.show()
+    plt.show()
 
 # data = fullmodel(priorpostrue)
 # data = So.brightness_point(ddata, spostrue)
