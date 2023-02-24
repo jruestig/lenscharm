@@ -1,0 +1,112 @@
+mock: True
+outputdir: 'output/fullmodel/test'
+seed: 41
+priorsamples: False
+
+
+spaces:
+  detectorspace:
+    Npix: 128
+    distance: 0.05
+    zeropadding: 4
+  sourcespace:
+    Npix: 128
+    distance: 0.05
+
+
+data:
+  noise_scale: 1.
+
+mockdata:
+  Type: 'Image'
+  GaussianSource:
+    A: 20
+    x0: 0.24
+    y: 0.17
+    a00: 0.04
+    a11: 0.14
+  Image:
+    path: 'Hubble150'
+    distance: 0.04
+    brightness: 8
+  Lens:
+    dPIE_0_b: 2.0044161
+    dPIE_0_q: 1.47265484
+    dPIE_0_r_s: 0.0471554
+    dPIE_0_r_c: 1.85812236
+    dPIE_0_th: 15.55583871
+    dPIE_0_x0: 0.0320614
+    dPIE_0_y0: 0.05448241
+    CNFW_0_b: 1.
+    CNFW_0_r_s: 0.3
+    CNFW_0_x0: 0.0
+    CNFW_0_y0: 1.5
+
+files:
+  psf: None
+  datapath: '/home/jruestig/Data/lensing/substructure_big.npy'
+
+
+priors:
+  source:
+    size:
+      mean: 0.1
+      sigma: 0.07
+      key: 'source_size'
+      N_copies: 1
+    amplitude:
+      offset_mean: 0.
+      offset_std:
+        - 1e-1
+        - 1e-4
+    fluctuations:
+      scale:
+        - 1e-1
+        - 1e-1
+      cutoff:
+        - 1.
+        - 1e-1
+      loglogslope:
+        - -5.0
+        - 5e-1
+  lens:
+    meanconvergence: #FIXME make learnable
+      fCNFW_0_b: 1.5
+      fCNFW_0_r_s: 0.5
+    offset:
+      offset_mean: 0
+      offset_std:
+        - 1e-2
+        - 1e-6
+    fluctuations:
+      fluctuations:
+        - 1.0
+        - 5e-2
+      loglogavgslope:
+        - -6.0
+        - 0.7
+      flexibility:
+        - 0.5
+        - 1.0
+      asperity: null
+        # - 0.1
+        # - 0.5
+
+minimization:
+  resume: False
+  geovi: True
+  total_iterations: 10
+  n_samples: 4 #'lambda i_iter: 6 if i_iter < 13 else 10'
+  ic_newton:
+    convergence_level: 2
+    deltaE: 0.1
+    iteration_limit: 10
+    name: Newton
+  ic_sampling:
+    deltaE: 0.05
+    iteration_limit: 25
+    name: Sampling(lin)
+  ic_sampling_nl:
+    deltaE: 0.5
+    iteration_limit: 10
+    name: Sampling(nonlin)
