@@ -31,6 +31,7 @@ from sys import exit
 # - Find a way to detect sub-structures (update z & b)
 # - What could be the correlation structure of the lens-profile
 # - Lens verschiebung als
+# - Shear model
 # -
 # - Try with smaller NFW substructures
 # - Try on real data
@@ -471,9 +472,9 @@ def deflection_check(samples_list, ii):
     axes[1, 0].set_title('deflection')
     axes[1, 1].set_title('reconstruction')
     axes[1, 2].set_title('(deflection - reconstruction)/maxdeflection')
-    for ii, (im, ax) in enumerate(zip(ims.flatten(), axes.flatten())):
+    for kk, (im, ax) in enumerate(zip(ims.flatten(), axes.flatten())):
         cb = plt.colorbar(im, ax=ax)
-        # if ii in [0, 1]:
+        # if kk in [0, 1]:
         #     cb.add_lines(imc)
 
     plt.tight_layout()
@@ -551,7 +552,7 @@ def Nsamples(iteration):
         return 8
 
 
-ic_newton = ift.AbsDeltaEnergyController(name='Newton', deltaE=0.001, iteration_limit=1)
+ic_newton = ift.AbsDeltaEnergyController(name='Newton', deltaE=0.001, iteration_limit=10)
 minimizer = ift.NewtonCG(ic_newton)
 
 
@@ -567,5 +568,5 @@ samples = ift.optimize_kl(
     initial_position=None,
     # constants=[key for key in sprior.domain.keys()],
     dry_run=False,
-    resume=True,
+    # resume=True,
 )
