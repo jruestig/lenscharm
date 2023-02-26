@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.interpolate import RectBivariateSpline
 
 
 def deflection_check(samples_list,
@@ -77,19 +78,38 @@ def Ls_check(
         true_source=None,
         data=None,
         noise_scale=None,
-        extent=None,):
+        extent=None,
+        samescale=True,
+        cast_to_size=True,
+):
     mean, var = samples_list.sample_stat()
 
     source_reconstruction = source_model.force(mean).val.T
     source_std = source_model.force(var).sqrt().val.T
     dfield = forward_model(mean).val
 
+    if samescale:
+        scale = true_source.max()
+    else:
+        scale = None
+
+    if cast_to_size:
+        xycoord = np.linspace(0, 1, num=source_reconstruction.shape[0])
+        Recaster = RectBivariateSpline(
+            xycoord, xycoord, source_reconstruction
+        )
+        xycoordnew = np.linspace(0, 1, num=true_source.shape[0])
+        source_reconstruction = Recaster(*(xycoordnew,)*2, grid=True) * (
+            source_reconstruction.shape[0]/true_source.shape[0]
+        )**2 / 4 # FIXME: This 4 should not be there
+
     fig, axes = plt.subplots(2, 3, figsize=(19, 10))
     ims = np.zeros_like(axes)
     ims[0, 0] = axes[0, 0].imshow(
-        true_source, origin='lower', vmin=0, vmax=true_source.max(), extent=extent)
+        true_source, origin='lower', vmin=0, vmax=scale, extent=extent)
     ims[0, 1] = axes[0, 1].imshow(
-        source_reconstruction, origin='lower', vmin=0, vmax=true_source.max(), extent=extent)
+        source_reconstruction, origin='lower', vmin=0, vmax=scale,
+        extent=extent)
     ims[0, 2] = axes[0, 2].imshow(
         (true_source-source_reconstruction)/true_source.max(),
         origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3, extent=extent)
@@ -109,5 +129,8 @@ def Ls_check(
     for im, ax in zip(ims.flatten(), axes.flatten()):
         plt.colorbar(im, ax=ax)
     plt.tight_layout()
-    plt.savefig(f'{outputdir}/gauss_KL_{ii}.png')
+    if outputdir is None:
+        plt.show()
+    else:
+        plt.savefig(f'{outputdir}/gauss_KL_{ii}.png')
     plt.close()

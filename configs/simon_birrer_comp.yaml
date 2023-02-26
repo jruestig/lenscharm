@@ -1,20 +1,28 @@
 mock: False
-outputdir: 'output/fullmodel/birrer_comparison'
+outputdir: 'output/fullmodel/birrer_comparison_withPSF/plotting_change'
 seed: 41
-priorsamples: False
+priorsamples: True
 
 
 spaces:
   detectorspace:
-    Npix: 128
-    distance: 0.05
+    Npix:
+      - 64
+      - 64
+    distance:
+      - 0.05
+      - 0.05
     zeropadding: 4
   sourcespace:
-    Npix: 128
-    distance: 0.05
-
+    Npix:
+      - 128
+      - 128
+    distance:
+      - 0.025
+      - 0.025
 
 data:
+  data_plot: False
   noise_scale: 10.
 
 mockdata:
@@ -50,38 +58,45 @@ files:
 
 priors:
   source:
-    size:
+    center:
+      mean: 0.
+      sigma: 0.2
+      key: 'source_center'
+    covariance:
+      mean: 0.05
+      sigma: 1e-2
+      key: 'source_covariance'
+    off_diagonal:
       mean: 0.1
-      sigma: 0.07
-      key: 'source_size'
-      N_copies: 1
+      sigma: 1e-2
+      key: 'source_off_diagonal'
     amplitude:
-      offset_mean: 0.
+      offset_mean: 3.3
       offset_std:
+        - 2.5e+0
         - 1e-1
-        - 1e-4
     fluctuations:
       scale:
-        - 1e-1
+        - 2e+0
         - 1e-1
       cutoff:
-        - 1.
-        - 1e-1
+        - 0.1
+        - 1e-2
       loglogslope:
-        - -5.0
+        - -4.0
         - 5e-1
   lens:
     meanconvergence: #FIXME make learnable
       fCNFW_0_b: 1.5
       fCNFW_0_r_s: 0.5
     offset:
-      offset_mean: 0
+      offset_mean: -0.5
       offset_std:
         - 1e-2
         - 1e-6
     fluctuations:
       fluctuations:
-        - 1.0
+        - 0.5
         - 5e-2
       loglogavgslope:
         - -6.0
@@ -94,7 +109,8 @@ priors:
         # - 0.5
 
 minimization:
-  resume: False
+  resume: True
+  dry_run: False
   geovi: True
   total_iterations: 10
   n_samples: 4 #'lambda i_iter: 6 if i_iter < 13 else 10'
