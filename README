@@ -1,3 +1,10 @@
 This is a playground for lensing reconstruction algorithms
 
 Updating e1ff5b04..43f1fe6f
+
+
+# Requirements
+- scipy
+
+
+- astropy

@@ -96,7 +96,7 @@ minimization:
   resume: False
   geovi: True
   total_iterations: 10
-  n_samples: 4 #'lambda i_iter: 6 if i_iter < 13 else 10'
+  n_samples: 5 #'lambda i_iter: 6 if i_iter < 13 else 10'
   ic_newton:
     convergence_level: 2
     deltaE: 0.1

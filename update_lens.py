@@ -247,8 +247,13 @@ linear_sampling = ift.AbsDeltaEnergyController(**cfg['minimization']['ic_samplin
 ic_newton = ift.AbsDeltaEnergyController(**cfg['minimization']['ic_newton'])
 minimizer = ift.NewtonCG(ic_newton)
 if cfg['minimization']['geovi']:
-    ic_sampling_nl = ift.AbsDeltaEnergyController(**cfg['minimization']['ic_sampling_nl'])
-    nonlinear_sampling = ift.NewtonCG(ic_sampling_nl)
+    def nonlinear_sampling(iteration):
+        if iteration == 0:
+            return None
+        else:
+            ic_sampling_nl = ift.AbsDeltaEnergyController(
+                **cfg['minimization']['ic_sampling_nl'])
+            return ift.NewtonCG(ic_sampling_nl)
 else:
     nonlinear_sampling = None
 
