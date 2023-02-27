@@ -18,8 +18,17 @@ def jax_gaussian(domain):
     y_ax -= center[1] * dist_y
     X, Y = jnp.meshgrid(x_ax, y_ax, indexing='ij')
 
-    def gaussian(var):
-        return - (0.5 / var) * (X ** 2 + Y ** 2)
+    # def gaussian(parameters):
+    #     var, center = parameters
+    #     return - (0.5 / var) * ((X-center[0])**2 + (Y-center[1])**2)
+
+    def gaussian(parameters):
+        center, covariance, rho = parameters
+        g00, g11 = covariance
+        g01 = g00*g11*rho
+        x, y = X-center[0], Y-center[1]
+        det = jnp.abs(g00*g11-g01*g01)
+        return -0.5/det * (x**2*g11-x*y*(g01+g01)+y**2*g00)
 
     # normalized psf
     return gaussian

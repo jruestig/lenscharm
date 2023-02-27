@@ -1,5 +1,5 @@
-mock: True
-outputdir: 'output/fullmodel/dpie_substructure/highmass_mediumconc'
+mock: False
+outputdir: 'output/fullmodel/birrer_comparison'
 seed: 41
 priorsamples: False
 calculate_elbo: False
@@ -7,8 +7,8 @@ calculate_elbo: False
 spaces:
   detector_space:
     Npix:
-      - 128
-      - 128
+      - 64
+      - 64
     distance:
       - 0.05
       - 0.05
@@ -18,13 +18,12 @@ spaces:
       - 128
       - 128
     distance:
-      - 0.05
-      - 0.05
-
+      - 0.025
+      - 0.025
 
 data:
-  data_plot: True
-  noise_scale: 1.
+  data_plot: False
+  noise_scale: 10.
 
 mockdata:
   Type: 'Image'
@@ -35,8 +34,7 @@ mockdata:
     a00: 0.04
     a11: 0.14
   Image:
-    cluster: 'bacco_34'
-    source_id: 0
+    path: 'Hubble150'
     distance: 0.04
     brightness: 8
   Lens:
@@ -48,12 +46,12 @@ mockdata:
     dPIE_0_x0: 0.0320614
     dPIE_0_y0: 0.05448241
     CNFW_0_b: 1.
-    CNFW_0_r_s: 0.1
+    CNFW_0_r_s: 0.3
     CNFW_0_x0: 0.0
     CNFW_0_y0: 1.5
 
 files:
-  psf_path: null  # '/home/jruestig/Data/comparisons/psf.fits'
+  psf_path: '/home/jruestig/Data/comparisons/psf.fits'
   data_path: '/home/jruestig/Data/comparisons/data.fits'
   source_path: '/home/jruestig/Data/comparisons/source.fits'
 
@@ -65,11 +63,11 @@ priors:
       sigma: 0.2
       key: 'source_center'
     covariance:
-      mean: 0.2
-      sigma: 1e-3
+      mean: 0.05
+      sigma: 1e-2
       key: 'source_covariance'
     off_diagonal:
-      mean: 0.01
+      mean: 0.1
       sigma: 1e-2
       key: 'source_off_diagonal'
     amplitude:
@@ -93,13 +91,13 @@ priors:
       fCNFW_0_b: 1.5
       fCNFW_0_r_s: 0.5
     offset:
-      offset_mean: 0
+      offset_mean: -0.5
       offset_std:
         - 1e-2
         - 1e-6
     fluctuations:
       fluctuations:
-        - 1.0
+        - 0.5
         - 5e-2
       loglogavgslope:
         - -6.0
@@ -112,12 +110,12 @@ priors:
         # - 0.5
 
 minimization:
-  resume: True
+  resume: False
   dry_run: False
   geovi: True
-  geovi_start: 1
+  geovi_start: 2
   total_iterations: 10
-  n_samples: 5 #'lambda i_iter: 6 if i_iter < 13 else 10'
+  n_samples: 4 #'lambda i_iter: 6 if i_iter < 13 else 10'
   ic_newton:
     convergence_level: 2
     deltaE: 0.1
