@@ -1,32 +1,42 @@
-mock: False
-outputdir: 'output/fullmodel/birrer_comparison'
+mock: True
+outputdir: 'output/fullmodel/dpie_substructure/highmass_mediumconc'
 seed: 41
 priorsamples: False
-
+calculate_elbo: False
 
 spaces:
-  detectorspace:
-    Npix: 128
-    distance: 0.05
+  detector_space:
+    Npix:
+      - 128
+      - 128
+    distance:
+      - 0.05
+      - 0.05
     zeropadding: 4
-  sourcespace:
-    Npix: 128
-    distance: 0.05
+  source_space:
+    Npix:
+      - 128
+      - 128
+    distance:
+      - 0.05
+      - 0.05
 
 
 data:
-  noise_scale: 10.
+  data_plot: True
+  noise_scale: 1.
 
 mockdata:
   Type: 'Image'
   GaussianSource:
     A: 20
     x0: 0.24
-    y: 0.17
+    y0: 0.17
     a00: 0.04
     a11: 0.14
   Image:
-    path: 'Hubble150'
+    cluster: 'bacco_34'
+    source_id: 0
     distance: 0.04
     brightness: 8
   Lens:
@@ -38,38 +48,46 @@ mockdata:
     dPIE_0_x0: 0.0320614
     dPIE_0_y0: 0.05448241
     CNFW_0_b: 1.
-    CNFW_0_r_s: 0.3
+    CNFW_0_r_s: 0.1
     CNFW_0_x0: 0.0
     CNFW_0_y0: 1.5
 
 files:
-  psf_path: '/home/jruestig/Data/comparisons/psf.fits'
+  psf_path: null  # '/home/jruestig/Data/comparisons/psf.fits'
   data_path: '/home/jruestig/Data/comparisons/data.fits'
   source_path: '/home/jruestig/Data/comparisons/source.fits'
 
 
 priors:
   source:
-    size:
-      mean: 0.1
-      sigma: 0.07
-      key: 'source_size'
-      N_copies: 1
+    center:
+      mean: 0.
+      sigma: 0.2
+      key: 'source_center'
+    covariance:
+      mean: 0.2
+      sigma: 1e-3
+      key: 'source_covariance'
+    off_diagonal:
+      mean: 0.01
+      sigma: 1e-2
+      key: 'source_off_diagonal'
     amplitude:
-      offset_mean: 0.
+      offset_mean: 3.3
       offset_std:
+        - 2.5e+0
         - 1e-1
-        - 1e-4
     fluctuations:
       scale:
-        - 1e-1
+        - 2e+0
         - 1e-1
       cutoff:
-        - 1.
-        - 1e-1
+        - 0.1
+        - 1e-2
       loglogslope:
-        - -5.0
+        - -4.0
         - 5e-1
+
   lens:
     meanconvergence: #FIXME make learnable
       fCNFW_0_b: 1.5
@@ -94,8 +112,10 @@ priors:
         # - 0.5
 
 minimization:
-  resume: False
+  resume: True
+  dry_run: False
   geovi: True
+  geovi_start: 1
   total_iterations: 10
   n_samples: 4 #'lambda i_iter: 6 if i_iter < 13 else 10'
   ic_newton:

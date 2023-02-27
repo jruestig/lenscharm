@@ -1,11 +1,11 @@
 mock: False
-outputdir: 'output/fullmodel/birrer_comparison_withPSF/plotting_change'
+outputdir: 'output/fullmodel/birrer_comparison'
 seed: 41
-priorsamples: True
-
+priorsamples: False
+calculate_elbo: False
 
 spaces:
-  detectorspace:
+  detector_space:
     Npix:
       - 64
       - 64
@@ -13,7 +13,7 @@ spaces:
       - 0.05
       - 0.05
     zeropadding: 4
-  sourcespace:
+  source_space:
     Npix:
       - 128
       - 128
@@ -30,7 +30,7 @@ mockdata:
   GaussianSource:
     A: 20
     x0: 0.24
-    y: 0.17
+    y0: 0.17
     a00: 0.04
     a11: 0.14
   Image:
@@ -85,6 +85,7 @@ priors:
       loglogslope:
         - -4.0
         - 5e-1
+
   lens:
     meanconvergence: #FIXME make learnable
       fCNFW_0_b: 1.5
@@ -109,9 +110,10 @@ priors:
         # - 0.5
 
 minimization:
-  resume: True
+  resume: False
   dry_run: False
   geovi: True
+  geovi_start: 2
   total_iterations: 10
   n_samples: 4 #'lambda i_iter: 6 if i_iter < 13 else 10'
   ic_newton:

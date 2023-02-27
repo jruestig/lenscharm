@@ -3,8 +3,8 @@ from operators import jax_gaussian
 
 
 def source_model(cfg):
-    npix_source = cfg['spaces']['sourcespace']['Npix']
-    dist_source = cfg['spaces']['sourcespace']['distance']
+    npix_source = cfg['spaces']['source_space']['Npix']
+    dist_source = cfg['spaces']['source_space']['distance']
     ift_source_space = ift.RGSpace(npix_source, dist_source)
 
     source_center_key = cfg['priors']['source']['center']['key']
@@ -49,16 +49,16 @@ if __name__ == '__main__':
     s = load_fits(cfg['files']['source_path'])
 
     # Source
-    cfg['spaces']['sourcespace']['Npix'] = (320,)*2
-    cfg['spaces']['sourcespace']['distance'] = (0.025/2.5,)*2
+    cfg['spaces']['source_space']['Npix'] = (320,)*2
+    cfg['spaces']['source_space']['distance'] = (0.025/2.5,)*2
 
     source_dict = source_model(cfg)
     source_mean = source_dict['source_mean']
     source_matern = source_dict['source_matern']
     source_diffuse = source_dict['source_diffuse']
 
-    npix_source = cfg['spaces']['sourcespace']['Npix']
-    dist_source = cfg['spaces']['sourcespace']['distance']
+    npix_source = cfg['spaces']['source_space']['Npix']
+    dist_source = cfg['spaces']['source_space']['distance']
     ift_source_space = ift.RGSpace(npix_source, dist_source)
 
     dspace = ift_source_space

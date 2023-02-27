@@ -101,7 +101,7 @@ def Ls_check(
         xycoordnew = np.linspace(0, 1, num=true_source.shape[0])
         source_reconstruction = Recaster(*(xycoordnew,)*2, grid=True) * (
             source_reconstruction.shape[0]/true_source.shape[0]
-        )**2 / 4 # FIXME: This 4 should not be there
+        )**2  # / 4 # FIXME: This 4 should not be there
 
     fig, axes = plt.subplots(2, 3, figsize=(19, 10))
     ims = np.zeros_like(axes)

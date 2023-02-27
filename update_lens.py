@@ -30,7 +30,7 @@ from sys import exit
 
 # TODO:
 # - Source-Source reconstruction
-# - Volume factor between source and lensplane/detectorspace
+# - Volume factor between source and lensplane/detector_space
 # - Update NFW profile (x0, y0, rs)
 # - Build in lens-light
 # - Find a way to detect sub-structures (update z & b)
@@ -70,11 +70,11 @@ noise_scale = cfg['data']['noise_scale']
 
 
 # Space convenience
-npix_lens = cfg['spaces']['detectorspace']['Npix']
-dist_lens = cfg['spaces']['detectorspace']['distance']
+npix_lens = cfg['spaces']['detector_space']['Npix']
+dist_lens = cfg['spaces']['detector_space']['distance']
 
-npix_source = cfg['spaces']['sourcespace']['Npix']
-dist_source = cfg['spaces']['sourcespace']['distance']
+npix_source = cfg['spaces']['source_space']['Npix']
+dist_source = cfg['spaces']['source_space']['distance']
 
 detector_space = cf.Space(npix_lens, dist_lens)
 
@@ -84,7 +84,6 @@ if cfg['mock']:
 else:
     d = load_fits(cfg['files']['data_path'])
     s = load_fits(cfg['files']['source_path'])
-    psf = load_fits(cfg['files']['psf_path'])
 
     c_data = np.ones_like(d)
     d_data = np.array((np.ones_like(d),)*2)
@@ -180,8 +179,13 @@ Re = Reshaper(interpolator.target, ift_data_space)
 
 
 # Psf Blurring
-B = partial(Blurring, kernel=psf)
-ift_Psf = ift.JaxLinearOperator(ift_data_space, ift_data_space, B, domain_dtype=float)
+if cfg['files']['psf_path'] is None:
+    print('No Psf loaded')
+    ift_Psf = ift.ScalingOperator(ift_data_space, 1, sampling_dtype=float)
+else:
+    psf = load_fits(cfg['files']['psf_path'])
+    B = partial(Blurring, kernel=psf)
+    ift_Psf = ift.JaxLinearOperator(ift_data_space, ift_data_space, B, domain_dtype=float)
 
 
 # Try source reconstruction
@@ -196,7 +200,7 @@ if cfg['priorsamples']:
     imargs = {'extent': detector_space.extent}
     for ii in range(10):
         priorpos = ift.from_random(fullmodel.domain)
-        print(source_covariance.force(priorpos).val, source_center.force(priorpos).val)
+
         Ls_prior = fullmodel(priorpos)
         source = source_diffuse.force(priorpos)
         conv = convergence_model.force(priorpos)
@@ -272,7 +276,7 @@ ic_newton = ift.AbsDeltaEnergyController(**cfg['minimization']['ic_newton'])
 minimizer = ift.NewtonCG(ic_newton)
 if cfg['minimization']['geovi']:
     def nonlinear_sampling(iteration):
-        if iteration == 0:
+        if iteration < cfg['minimization']['geovi_start']:
             return None
         else:
             ic_sampling_nl = ift.AbsDeltaEnergyController(**cfg['minimization']['ic_sampling_nl'])
@@ -327,3 +331,10 @@ samples = ift.optimize_kl(
     dry_run=cfg['minimization']['dry_run'],
     resume=cfg['minimization']['resume'],
 )
+
+if cfg['calculate_elbo']:
+    elbo_stats = ift.estimate_evidence_lower_bound(
+        ift.StandardHamiltonian(likelihood_energy),
+        samples,
+        200
+    )
