@@ -1,25 +1,18 @@
 import nifty8 as ift
 import numpy as np
 import matplotlib.pyplot as plt
-from numpy import array
-
-from jax.scipy.signal import convolve2d
-import jax.numpy as jnp
-from jax import jit
 
 from utils import create_mock_data
-
 from source_model import source_model
 
 from source_fwd import (
     save_fits, load_fits, Blurring, lens_to_params, smoother)
-from scipy.interpolate import RectBivariateSpline
+
 from os.path import join, exists
 from os import makedirs
 
 from functools import partial
 
-from NiftyOperators import PriorTransform
 
 from linear_interpolation import Interpolation, Transponator
 from matplotlib.colors import LogNorm
@@ -129,6 +122,7 @@ source_diffuse = source_dict['source_diffuse']
 #            'Gauss_0_y0': ('normal', 0.0, 0.5),
 #            'Gauss_0_a00': ('lognorm', .60, 0.3),
 #            'Gauss_0_a11': ('lognorm', .60, 0.3)}
+# from NiftyOperators import PriorTransform
 # sprior = PriorTransform(spriors)
 # smodel = ift.JaxOperator(
 #     sprior.domain,
