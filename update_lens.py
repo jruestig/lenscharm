@@ -1,5 +1,5 @@
 from charm_lensing.src.utils import (create_mock_data, load_fits, smoother)
-from charm_lensing.src.psf_convolution import Blurring
+from charm_lensing.src.psf_operator import PsfOperator
 from charm_lensing.src.source_model import source_model
 from charm_lensing.src.linear_interpolation import Interpolation, Transponator
 from charm_lensing.src.operators import Reshaper, jax_gaussian
@@ -40,7 +40,6 @@ from sys import exit
 # - Source-Source reconstruction
 
 
-# parser =
 parser = argparse.ArgumentParser()
 parser.add_argument("config", help="Config File", type=str, nargs='?',
                     const=1, default='./configs/first_config.yaml')
@@ -83,7 +82,7 @@ else:
         c_data = None
         d_data = None
 
-snrmask = (Blurring(d, smoother) > 2*noise_scale)
+snrmask = (PsfOperator(d, smoother) > 2*noise_scale)
 SNR = d[snrmask].sum()/(noise_scale*np.sqrt(snrmask.sum()))
 
 if cfg['data_plot']:
@@ -174,13 +173,13 @@ interpolator = Interpolation(ift_source_space, 'source', pointsdomain, 'lens')
 Re = Reshaper(interpolator.target, ift_data_space)
 
 
-# Psf Blurring
+# Psf Operator
 if cfg['files']['psf_path'] is None:
     print('No Psf loaded')
     ift_Psf = ift.ScalingOperator(ift_data_space, 1, sampling_dtype=float)
 else:
     psf = load_fits(cfg['files']['psf_path'])
-    B = partial(Blurring, kernel=psf)
+    B = partial(PsfOperator, kernel=psf)
     ift_Psf = ift.JaxLinearOperator(ift_data_space, ift_data_space, B, domain_dtype=float)
 
 
