@@ -1,5 +1,5 @@
 import nifty8 as ift
-from operators import jax_gaussian
+from .operators import jax_gaussian
 
 
 def source_model(cfg):

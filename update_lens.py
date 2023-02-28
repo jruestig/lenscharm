@@ -1,30 +1,21 @@
+from charm_lensing.src.utils import (create_mock_data, load_fits, smoother)
+from charm_lensing.src.psf_convolution import Blurring
+from charm_lensing.src.source_model import source_model
+from charm_lensing.src.linear_interpolation import Interpolation, Transponator
+from charm_lensing.src.operators import Reshaper, jax_gaussian
+from charm_lensing.src.plotting import deflection_check, Ls_check
+
 import nifty8 as ift
+import cluster_fits as cf
 import numpy as np
 import matplotlib.pyplot as plt
-
-from utils import create_mock_data
-from source_model import source_model
-
-from source_fwd import (
-    save_fits, load_fits, Blurring, lens_to_params, smoother)
-
-from os.path import join, exists
-from os import makedirs
-
-from functools import partial
-
-
-from linear_interpolation import Interpolation, Transponator
-from matplotlib.colors import LogNorm
-
-from operators import Reshaper, jax_gaussian
-from plotting import deflection_check, Ls_check
+import yaml
 
 import argparse
+from os.path import join, exists
+from os import makedirs
+from functools import partial
 
-import cluster_fits as cf
-import yaml
-import sys
 from sys import exit
 
 
@@ -96,6 +87,7 @@ snrmask = (Blurring(d, smoother) > 2*noise_scale)
 SNR = d[snrmask].sum()/(noise_scale*np.sqrt(snrmask.sum()))
 
 if cfg['data_plot']:
+    from matplotlib.colors import LogNorm
     fig, axes = plt.subplots(2, 2)
     axes[0, 0].imshow(s, origin='lower')
     axes[0, 1].imshow(d, origin='lower')
