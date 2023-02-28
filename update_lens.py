@@ -29,15 +29,15 @@ from sys import exit
 
 
 # TODO:
-# - Source-Source reconstruction
-# - Volume factor between source and lensplane/detector_space
+# - Volume factor between source and lensplane/detector_space ?
+# - Shear model
 # - Update NFW profile (x0, y0, rs)
+# - Lens shift in Fourier-space: e^(2pi k (x-x0))
 # - Build in lens-light
 # - Find a way to detect sub-structures (update z & b)
-# - What could be the correlation structure of the lens-profile
-# - Lens shift in Fourier-space: e^(2pi k (x-x0))
-# - Shear model
 # - Put prior range into mockdata generation and start by some seed
+#
+# - What could be the correlation structure of the lens-profile
 #
 # - Try with smaller NFW substructures
 # - Try on real data
@@ -46,6 +46,7 @@ from sys import exit
 # DONE:
 # - Find the transpose bug (maybe, why is source transposed but rest fine?)
 # - Blurring with psf [DONE]
+# - Source-Source reconstruction
 
 
 # parser =
@@ -83,15 +84,18 @@ if cfg['mock']:
     s, d, c_data, d_data = create_mock_data(cfg)
 else:
     d = load_fits(cfg['files']['data_path'])
-    s = load_fits(cfg['files']['source_path'])
+    if cfg['files']['source_path'] is not None:
+        s = load_fits(cfg['files']['source_path'])
+    else:
+        s = np.ones(npix_source)
 
-    c_data = np.ones_like(d)
-    d_data = np.array((np.ones_like(d),)*2)
+        c_data = None
+        d_data = None
 
 snrmask = (Blurring(d, smoother) > 2*noise_scale)
 SNR = d[snrmask].sum()/(noise_scale*np.sqrt(snrmask.sum()))
 
-if cfg['data']['data_plot']:
+if cfg['data_plot']:
     fig, axes = plt.subplots(2, 2)
     axes[0, 0].imshow(s, origin='lower')
     axes[0, 1].imshow(d, origin='lower')

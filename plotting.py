@@ -15,14 +15,13 @@ def deflection_check(samples_list,
     mean, var = samples_list.sample_stat()
 
     convergence = convergence_model.force(mean).val
-    deflectionf = deflection(convergence_model.force(mean)).val.reshape(
+    deflection_field = deflection(convergence_model.force(mean)).val.reshape(
         2, *convergence.shape
     )
 
     # number_of_levels = 5
     # levels = np.linspace(start=0.1, stop=1, num=number_of_levels)*cdata.max()
 
-    vmax = np.hypot(*deflection_data).max()
     fig, axes = plt.subplots(2, 3, figsize=(19, 10))
 
     # imc = axes[0, 0].contour(convergence_data, colors='red', levels=levels, origin='lower', extent=extent)
@@ -30,29 +29,63 @@ def deflection_check(samples_list,
     # axes[0, 1].contour(convergence_data, colors='red', levels=levels, origin='lower', extent=extent)
     # axes[0, 1].contour(convergence, colors='orange', levels=levels, origin='lower', extent=extent)
 
+    if convergence_data is None:
+        convergence_min = None
+        convergence_max = None
+        convergence_data = np.ones_like(convergence)
+    else:
+        convergence_min = convergence_data.min()
+        convergence_max = convergence_data.max()
+
+    if deflection_data is None:
+        deflection_max = None
+        deflection_data = np.zeros_like(deflection_field)
+    else:
+        deflection_max = np.hypot(*deflection_data).max()
+
+
     ims = np.zeros_like(axes)
     ims[0, 0] = axes[0, 0].imshow(
         convergence_data,
         origin='lower',
-        vmin=convergence_data.min(), vmax=convergence_data.max(),
+        vmin=convergence_min,
+        vmax=convergence_max,
         cmap='RdYlBu_r',
-        extent=extent)  # norm=LogNorm(vmax=convergence_data.max(),vmin=convergence_data.min()))
+        extent=extent)
+    # norm=LogNorm(vmax=convergence_data.max(),vmin=convergence_data.min()))
     ims[0, 1] = axes[0, 1].imshow(
         convergence,
         origin='lower',
-        vmax=convergence_data.max(), vmin=convergence_data.min(),
+        vmin=convergence_min,
+        vmax=convergence_max,
         cmap='RdYlBu_r',
         extent=extent)  # norm=LogNorm(vmax=convergence_data.max(),vmin=convergence_data.min()))
     ims[0, 2] = axes[0, 2].imshow(
-        (convergence_data-convergence)/convergence_data.max(), origin='lower', cmap='RdBu_r', vmin=-0.3, vmax=0.3, extent=extent)
+        (convergence_data-convergence)/convergence_data.max(),
+        origin='lower',
+        cmap='RdBu_r',
+        vmin=-0.3,
+        vmax=0.3,
+        extent=extent)
     ims[1, 0] = axes[1, 0].imshow(
-        np.hypot(*deflection_data), vmin=-0.10, origin='lower', vmax=vmax, extent=extent)
+        np.hypot(*deflection_data),
+        origin='lower',
+        vmin=-0.10,
+        vmax=deflection_max,
+        extent=extent)
     ims[1, 1] = axes[1, 1].imshow(
-        np.hypot(*deflectionf), vmin=-0.10, origin='lower', vmax=vmax, extent=extent)
+        np.hypot(*deflection_field),
+        origin='lower',
+        vmin=-0.10,
+        vmax=deflection_max,
+        extent=extent)
     ims[1, 2] = axes[1, 2].imshow(
-        np.hypot(*(deflection_data-deflectionf))/vmax,
-        vmin=-0.3, vmax=0.3,
-        origin='lower', cmap='RdBu_r', extent=extent)
+        np.hypot(*(deflection_data-deflection_field))/deflection_field.max(),
+        vmin=-0.3,
+        vmax=0.3,
+        origin='lower',
+        cmap='RdBu_r',
+        extent=extent)
     axes[0, 0].set_title('convergence')
     axes[0, 1].set_title('rec')
     axes[0, 2].set_title('(convergence - rec)/maxconvergence')
@@ -89,9 +122,9 @@ def Ls_check(
     dfield = forward_model(mean).val
 
     if samescale:
-        scale = true_source.max()
+        source_max = true_source.max()
     else:
-        scale = None
+        source_max = None
 
     if cast_to_size:
         xycoord = np.linspace(0, 1, num=source_reconstruction.shape[0])
@@ -106,9 +139,9 @@ def Ls_check(
     fig, axes = plt.subplots(2, 3, figsize=(19, 10))
     ims = np.zeros_like(axes)
     ims[0, 0] = axes[0, 0].imshow(
-        true_source, origin='lower', vmin=0, vmax=scale, extent=extent)
+        true_source, origin='lower', vmin=0, vmax=source_max, extent=extent)
     ims[0, 1] = axes[0, 1].imshow(
-        source_reconstruction, origin='lower', vmin=0, vmax=scale,
+        source_reconstruction, origin='lower', vmin=0, vmax=source_max,
         extent=extent)
     ims[0, 2] = axes[0, 2].imshow(
         (true_source-source_reconstruction)/true_source.max(),

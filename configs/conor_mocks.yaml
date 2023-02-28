@@ -1,15 +1,15 @@
-mock: True
-outputdir: 'output/fullmodel/dpie_substructure/highmass_mediumconc'
+mock: False
+outputdir: 'output/fullmodel/conor/098809'
 seed: 41
-priorsamples: False
+priorsamples: True
 calculate_elbo: False
-data_plot: True
+data_plot: False
 
 spaces:
   detector_space:
     Npix:
-      - 128
-      - 128
+      - 250
+      - 250
     distance:
       - 0.05
       - 0.05
@@ -22,9 +22,8 @@ spaces:
       - 0.05
       - 0.05
 
-
 data:
-  noise_scale: 1.
+  noise_scale: 0.003
 
 mockdata:
   Type: 'Image'
@@ -35,8 +34,7 @@ mockdata:
     a00: 0.04
     a11: 0.14
   Image:
-    cluster: 'bacco_34'
-    source_id: 0
+    path: 'Hubble150'
     distance: 0.04
     brightness: 8
   Lens:
@@ -48,14 +46,14 @@ mockdata:
     dPIE_0_x0: 0.0320614
     dPIE_0_y0: 0.05448241
     CNFW_0_b: 1.
-    CNFW_0_r_s: 0.1
+    CNFW_0_r_s: 0.3
     CNFW_0_x0: 0.0
     CNFW_0_y0: 1.5
 
 files:
-  psf_path: null  # '/home/jruestig/Data/comparisons/psf.fits'
-  data_path: '/home/jruestig/Data/comparisons/data.fits'
-  source_path: '/home/jruestig/Data/comparisons/source.fits'
+  psf_path: '/home/jruestig/Data/simona_mocks/mock/098809/psf.fits'
+  data_path: '/home/jruestig/Data/simona_mocks/mock/098809/data.fits'
+  source_path: null
 
 
 priors:
@@ -65,17 +63,17 @@ priors:
       sigma: 0.2
       key: 'source_center'
     covariance:
-      mean: 0.2
-      sigma: 1e-3
+      mean: 0.05
+      sigma: 1e-2
       key: 'source_covariance'
     off_diagonal:
-      mean: 0.01
+      mean: 0.1
       sigma: 1e-2
       key: 'source_off_diagonal'
     amplitude:
-      offset_mean: 3.3
+      offset_mean: 0.05
       offset_std:
-        - 2.5e+0
+        - 1.0e+0
         - 1e-1
     fluctuations:
       scale:
@@ -90,16 +88,16 @@ priors:
 
   lens:
     meanconvergence: #FIXME make learnable
-      fCNFW_0_b: 1.5
-      fCNFW_0_r_s: 0.5
+      fCNFW_0_b: 2.0
+      fCNFW_0_r_s: 1.0
     offset:
-      offset_mean: 0
+      offset_mean: -0.5
       offset_std:
         - 1e-2
         - 1e-6
     fluctuations:
       fluctuations:
-        - 1.0
+        - 0.5
         - 5e-2
       loglogavgslope:
         - -6.0
@@ -115,9 +113,9 @@ minimization:
   resume: True
   dry_run: False
   geovi: True
-  geovi_start: 1
+  geovi_start: 2
   total_iterations: 10
-  n_samples: 5 #'lambda i_iter: 6 if i_iter < 13 else 10'
+  n_samples: 4 #'lambda i_iter: 6 if i_iter < 13 else 10'
   ic_newton:
     convergence_level: 2
     deltaE: 0.1

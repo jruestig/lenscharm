@@ -3,6 +3,7 @@ outputdir: 'output/fullmodel/birrer_comparison'
 seed: 41
 priorsamples: False
 calculate_elbo: False
+data_plot: False
 
 spaces:
   detector_space:
@@ -22,7 +23,6 @@ spaces:
       - 0.025
 
 data:
-  data_plot: False
   noise_scale: 10.
 
 mockdata:
