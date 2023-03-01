@@ -1,6 +1,13 @@
 This is a playground for lensing reconstruction algorithms
 
+
+# Nifty Branch
 Updating e1ff5b04..43f1fe6f
+- Need to update interpolation with casting_to_zero option
+
+# Old Remote Path
+git@gitlab.mpcdf.mpg.de:jruestig/lensing.git
+
 
 
 # Requirements
