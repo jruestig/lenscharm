@@ -21,24 +21,27 @@ from sys import exit
 
 
 # TODO:
-# - Volume factor between source and lensplane/lens_space ?
 # - Shear model
-# - Update NFW profile (x0, y0, rs)
-# - Lens shift in Fourier-space: e^(2pi k (x-x0))
 # - Build in lens-light
+# - Volume factors between source and lensplane/lens_space ?
+# - Better MOCKS: Put prior range into data generation & initialize by some seed
+#
 # - Find a way to detect sub-structures (update z & b)
-# - Put prior range into mockdata generation and start by some seed
 #
 # - What could be the correlation structure of the lens-profile
 #
-# - Try with smaller NFW substructures
 # - Try on real data
 # - Try with Aleksandra data
+#
+# IDEAS:
+# - Lens shift in Fourier-space: e^(2pi k (x-x0))
 #
 # DONE:
 # - Find the transpose bug (maybe, why is source transposed but rest fine?)
 # - Blurring with psf [DONE]
 # - Source-Source reconstruction
+# - Update NFW profile (x0, y0, rs)
+# - Try with smaller NFW substructures
 
 
 parser = argparse.ArgumentParser()
