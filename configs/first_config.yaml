@@ -1,12 +1,12 @@
 mock: True
-outputdir: 'output/fullmodel/dpie_substructure/highmass_mediumconc'
+outputdir: 'output/fullmodel/freenfw'
 seed: 41
 priorsamples: False
 calculate_elbo: False
-data_plot: True
+data_plot: False
 
 spaces:
-  detector_space:
+  lens_space:
     Npix:
       - 128
       - 128
@@ -47,13 +47,13 @@ mockdata:
     dPIE_0_th: 15.55583871
     dPIE_0_x0: 0.0320614
     dPIE_0_y0: 0.05448241
-    CNFW_0_b: 1.
-    CNFW_0_r_s: 0.1
+    CNFW_0_b: 1.0001
+    CNFW_0_r_s: 0.3
     CNFW_0_x0: 0.0
     CNFW_0_y0: 1.5
 
 files:
-  psf_path: null  # '/home/jruestig/Data/comparisons/psf.fits'
+  psf_path: '/home/jruestig/Data/comparisons/psf.fits'
   data_path: '/home/jruestig/Data/comparisons/data.fits'
   source_path: '/home/jruestig/Data/comparisons/source.fits'
 
@@ -61,7 +61,7 @@ files:
 priors:
   source:
     center:
-      mean: 0.
+      mean: -0.5
       sigma: 0.2
       key: 'source_center'
     covariance:
@@ -73,13 +73,13 @@ priors:
       sigma: 1e-2
       key: 'source_off_diagonal'
     amplitude:
-      offset_mean: 3.3
+      offset_mean: 2.3
       offset_std:
-        - 2.5e+0
+        - 0.5e+0
         - 1e-1
     fluctuations:
       scale:
-        - 2e+0
+        - 1.5e+0
         - 1e-1
       cutoff:
         - 0.1
@@ -89,17 +89,47 @@ priors:
         - 5e-1
 
   lens:
-    meanconvergence: #FIXME make learnable
-      fCNFW_0_b: 1.5
-      fCNFW_0_r_s: 0.5
+    nfw:
+      prefix: 'nfw_'
+      circular: False
+      b:
+        key: 'b'
+        mean: 1.0
+        sigma: 0.0001
+        distribution: 'normal'
+        N_copies: 1
+      rs:
+        key: 'rs'
+        mean: 0.5
+        sigma: 0.1
+        distribution: 'log_normal'
+        N_copies: 1
+      center:
+        key: 'center'
+        mean: 0.
+        sigma: 0.2
+        distribution: 'normal'
+        N_copies: 2
+      q:
+        key: 'q'
+        mean: 0.5
+        sigma: 0.5
+        distribution: 'uniform'
+        N_copies: 1
+      theta:
+        key: 'theta'
+        mean: 0.0
+        sigma: 2E1
+        distribution: 'normal'
+        N_copies: 1
     offset:
-      offset_mean: 0
+      offset_mean: -0.5
       offset_std:
         - 1e-2
         - 1e-6
     fluctuations:
       fluctuations:
-        - 1.0
+        - 0.5
         - 5e-2
       loglogavgslope:
         - -6.0
@@ -111,12 +141,13 @@ priors:
         # - 0.1
         # - 0.5
 
+
 minimization:
   resume: True
   dry_run: False
   geovi: True
-  geovi_start: 1
-  total_iterations: 10
+  geovi_start: 9
+  total_iterations: 11
   n_samples: 5 #'lambda i_iter: 6 if i_iter < 13 else 10'
   ic_newton:
     convergence_level: 2

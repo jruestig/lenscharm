@@ -26,12 +26,12 @@ def load_fits(path_to_file, get_header=False):
 def create_mock_data(cfg):
     np.random.seed(cfg['seed'])
 
-    detector_space = cf.Space(
-        cfg['spaces']['detector_space']['Npix'],
-        cfg['spaces']['detector_space']['distance'])
+    lens_space = cf.Space(
+        cfg['spaces']['lens_space']['Npix'],
+        cfg['spaces']['lens_space']['distance'])
 
-    dpie = cf.dPIE(detector_space, xy0=np.array((0., 0.)))
-    nfw = cf.CircularNfw(detector_space)
+    dpie = cf.dPIE(lens_space, xy0=np.array((0., 0.)))
+    nfw = cf.CircularNfw(lens_space)
     model = dpie + nfw
 
     lensposition = cfg['mockdata']['Lens']
@@ -40,15 +40,15 @@ def create_mock_data(cfg):
 
     if cfg['mockdata']['Type'] in ['Gauss', 'GaussianSource']:
         # Gaussian Source
-        So = cf.GaussianSource(detector_space)
+        So = cf.GaussianSource(lens_space)
         spostrue = {'Gauss_0_A': np.array([20.0]),
                     'Gauss_0_x0': np.array([0.24]),
                     'Gauss_0_y0': np.array([0.17]),
                     'Gauss_0_a00': np.array([0.04]),
                     'Gauss_0_a11': np.array([0.14])}
-        s = So.brightness_point(detector_space.xycoords, spostrue)
+        s = So.brightness_point(lens_space.xycoords, spostrue)
         Ls = So.brightness_point(
-            detector_space.xycoords-model.deflection_field(lensposition),
+            lens_space.xycoords-model.deflection_field(lensposition),
             spostrue)
 
     elif cfg['mockdata']['Type'] in ['Image']:
@@ -64,8 +64,8 @@ def create_mock_data(cfg):
             cf.Space(source.shape, 0.04).xycoords[1, :, 0],
             cf.Space(source.shape, 0.04).xycoords[0, 0, :],
             source)
-        s = S(*(detector_space.xycoords), grid=False)*8
-        Ls = S(*(detector_space.xycoords-model.deflection_field(lensposition)),
+        s = S(*(lens_space.xycoords), grid=False)*8
+        Ls = S(*(lens_space.xycoords-model.deflection_field(lensposition)),
                grid=False)*8
 
     noise = np.random.normal(size=Ls.shape, scale=cfg['data']['noise_scale'])

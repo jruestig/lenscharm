@@ -4,6 +4,7 @@ from charm_lensing.src.source_model import source_model
 from charm_lensing.src.linear_interpolation import Interpolation, Transponator
 from charm_lensing.src.operators import Reshaper, jax_gaussian
 from charm_lensing.src.plotting import deflection_check, Ls_check
+from charm_lensing.src.convergence_models import get_convergence_model
 
 import nifty8 as ift
 import cluster_fits as cf
@@ -20,7 +21,7 @@ from sys import exit
 
 
 # TODO:
-# - Volume factor between source and lensplane/detector_space ?
+# - Volume factor between source and lensplane/lens_space ?
 # - Shear model
 # - Update NFW profile (x0, y0, rs)
 # - Lens shift in Fourier-space: e^(2pi k (x-x0))
@@ -61,13 +62,13 @@ noise_scale = cfg['data']['noise_scale']
 
 
 # Space convenience
-npix_lens = cfg['spaces']['detector_space']['Npix']
-dist_lens = cfg['spaces']['detector_space']['distance']
+npix_lens = cfg['spaces']['lens_space']['Npix']
+dist_lens = cfg['spaces']['lens_space']['distance']
 
 npix_source = cfg['spaces']['source_space']['Npix']
 dist_source = cfg['spaces']['source_space']['distance']
 
-detector_space = cf.Space(npix_lens, dist_lens)
+lens_space = cf.Space(npix_lens, dist_lens)
 
 
 if cfg['mock']:
@@ -101,7 +102,7 @@ ift_source_space = ift.RGSpace(npix_source, dist_source)
 ift_lens_space = ift.RGSpace(npix_lens, dist_lens)
 ift_data_space = ift.RGSpace(d.shape, distances=dist_lens)
 
-pointsdomain = ift.UnstructuredDomain(detector_space.xycoords.reshape(2, -1).shape)
+pointsdomain = ift.UnstructuredDomain(lens_space.xycoords.reshape(2, -1).shape)
 
 
 # Source
@@ -124,38 +125,20 @@ source_diffuse = source_dict['source_diffuse']
 #     lambda x: So.brightness_field(x)
 # )
 # source_diffuse = smodel @ sprior
-
-convergence_maker = ift.CorrelatedFieldMaker('lens_')
-convergence_maker.set_amplitude_total_offset(**cfg['priors']['lens']['offset'])
-convergence_maker.add_fluctuations(ift_lens_space, **cfg['priors']['lens']['fluctuations'])
-correlated_convergence = convergence_maker.finalize()
-convergence_pspec = convergence_maker.power_spectrum
-
 # Mean convergence
-cnfw = cf.CircularNfw(detector_space, xy0=np.array((0, 0)), fixed=True)
-nfw_convergence = ift.Field.from_raw(
-    ift_lens_space, np.log(cnfw.convergence_field(
-        {'fCNFW_0_b': np.array(cfg['priors']['lens']['meanconvergence']['fCNFW_0_b']).reshape(1),
-         'fCNFW_0_r_s': np.array(cfg['priors']['lens']['meanconvergence']['fCNFW_0_r_s']).reshape(1),
-         }))
-)
-convergence_check = nfw_convergence
-nfw_convergence = ift.Adder(nfw_convergence)
-adder = nfw_convergence
 
-# Total Convergence
-convergence_model = (adder @ correlated_convergence).exp()
-
+lens_dict = get_convergence_model(cfg)
+convergence_model = lens_dict['convergence']
 
 # Deflection Angle Converter
-tmpdeflection = cf.DeflectionAngle(detector_space)
+tmpdeflection = cf.DeflectionAngle(lens_space)
 deflection = ift.JaxLinearOperator(
     ift_lens_space,
     pointsdomain,
     lambda x: tmpdeflection(x).reshape(2, -1),
     domain_dtype=float
 )
-tmpdeflection = cf.DeflectionAngle(detector_space)
+tmpdeflection = cf.DeflectionAngle(lens_space)
 
 
 # Full Lens model
@@ -165,7 +148,7 @@ lensmodel = ift.JaxOperator(
     ift_lens_space,
     pointsdomain,
     lambda x: (upperleftcorner - ift_source_space.distances[0]/2 +
-               (detector_space.xycoords - tmpdeflection(x)).reshape(2, -1))
+               (lens_space.xycoords - tmpdeflection(x)).reshape(2, -1))
 )
 
 # FULL MODEL
@@ -192,9 +175,15 @@ fullmodel = ift_Psf @ Re @ interpolator @ (
 
 
 if cfg['priorsamples']:
-    imargs = {'extent': detector_space.extent}
+    imargs = {'extent': lens_space.extent}
     for ii in range(10):
         priorpos = ift.from_random(fullmodel.domain)
+
+
+        vals = lens_dict['prior_transform'].force(priorpos).val
+        for key, val in vals.items():
+            print(key, val)
+
 
         Ls_prior = fullmodel(priorpos)
         source = source_diffuse.force(priorpos)
@@ -291,7 +280,7 @@ def plot_check(samples_list, ii):
         true_source=s,
         data=d,
         noise_scale=noise_scale,
-        extent=detector_space.extent,
+        extent=lens_space.extent,
         samescale=False
     )
     deflection_check(
@@ -302,7 +291,7 @@ def plot_check(samples_list, ii):
         deflection=deflection,
         deflection_data=d_data,
         convergence_data=c_data,
-        extent=detector_space.extent
+        extent=lens_space.extent
     )
     plt.close()
 

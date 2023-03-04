@@ -6,7 +6,7 @@ calculate_elbo: False
 data_plot: False
 
 spaces:
-  detector_space:
+  lens_space:
     Npix:
       - 250
       - 250
@@ -87,9 +87,24 @@ priors:
         - 5e-1
 
   lens:
-    meanconvergence: #FIXME make learnable
-      fCNFW_0_b: 2.0
-      fCNFW_0_r_s: 1.0
+    nfw:
+      prefix: 'nfw_'
+      circular: False
+      b: null
+      rs:
+        key: 'rs'
+        mean: 0.01
+        sigma: 0.2
+      center:
+        key: 'center'
+        mean: 0.
+        sigma: 0.2
+      q:
+        key: 'q'
+      theta:
+        key: 'theta'
+        mean: 0.0
+        sigma: 1E5
     offset:
       offset_mean: -0.5
       offset_std:
