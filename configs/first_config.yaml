@@ -106,13 +106,13 @@ priors:
         key: 'rs'
         mean: 0.5
         sigma: 0.08
-        distribution: 'log_normal'
+        distribution: null
         N_copies: 1
       center:
         key: 'center'
         mean: 0.
         sigma: 0.05
-        distribution: null
+        distribution: 'normal'
         N_copies: 2
       q:
         key: 'q'

@@ -5,22 +5,7 @@ import nifty8 as ift
 from nifty8 import JaxOperator, is_linearization
 from cluster_fits import Space, EllipticalNfw
 from jax import custom_jvp
-from functools import reduce
-
-
-class ConstantOperator(ift.LinearOperator):
-    def __init__(self, field):
-        self._domain = ift.makeDomain(field.domain)
-        self._target = ift.makeDomain(field.domain)
-        self._field = field
-        self._linearization_field = ift.makeField(
-            self._domain, np.zeros_like(field.val))
-        self._capability = self.TIMES | self.ADJOINT_TIMES
-
-    def apply(self, x, mode):
-        if is_linearization(x):
-            return self._linearization_field
-        return self._field
+from functools import reduce, partial
 
 
 @custom_jvp
@@ -84,28 +69,20 @@ def distribution_getter(prefix, values):
     if distribution in ['log_normal', 'lognormal']:
         return ift.LognormalTransform(**values).ducktape_left(values['key'])
 
-    # FIXME: Something which justs inserts a value as an operator,
-    # i.e. conditional to that value
     if distribution is None:
         value = ift.Field.from_raw(
             ift.UnstructuredDomain(values['N_copies']), values['mean']
         )
+        print(f'Constant ({values["key"]}): {value.val}')
         return {values['key']: value.val}
 
 
 def unite_dict(a: dict, b: dict) -> dict:
-    '''Returns union of a and b'''
+    '''Returns: union of a and b'''
     tmp = {}
     tmp.update(a)
     tmp.update(b)
     return tmp
-
-
-def all_parameters(constants):
-    def constants_plus_learned(x):
-        return unite_dict(constants, x)
-        # return constants.unite(x)
-    return constants_plus_learned
 
 
 def get_nfw_operator(ift_lens_space, cfg):
@@ -122,17 +99,13 @@ def get_nfw_operator(ift_lens_space, cfg):
         oper = distribution_getter(
                 prefix,
                 cfg['priors']['lens']['nfw'][key])
-
         if type(oper) is dict:
             constant_keys.append(oper)
         else:
             prior_transform.append(oper)
-
     prior_transform = reduce(lambda x,y: x+y, prior_transform)
     constants = reduce(unite_dict, constant_keys)
-    # constants = ift.MultiField.from_dict(constants)
-
-    constants_plus_learned = all_parameters(constants)
+    constants_plus_learned = partial(unite_dict, b=constants)
 
     model_keys = [prefix + key for key in prior_keys]
     ENFW = ift.JaxOperator(
