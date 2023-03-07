@@ -1,4 +1,5 @@
-from charm_lensing.src.utils import (create_mock_data, load_fits, smoother)
+from charm_lensing.src.utils import (load_fits, smoother)
+from charm_lensing.src.mock_data import create_mock_data
 from charm_lensing.src.psf_operator import PsfOperator
 from charm_lensing.src.source_model import source_model
 from charm_lensing.src.linear_interpolation import Interpolation, Transponator
@@ -33,6 +34,22 @@ from sys import exit
 # - Try on real data
 # - Try with Aleksandra data
 #
+#
+# CODE STRUCTURE:
+# 1. make Spaces as a seperate Class
+#   - lens/image space will be an instance
+#   - source space will be an instance to that
+#   - it holds xycoords which are defined with respect to a center variable
+#   - it should make the logic of instantiating the right xycoords conversion for the interpolator
+#     more clear
+#   - probably holds the nifty RGSpace as an value
+#
+# 2. Plotting Routine
+#   - plotting for real data
+#   - plotting for mock data (separate)
+#   - plotting component separation in convergence fs
+#
+#
 # IDEAS:
 # - Lens shift in Fourier-space: e^(2pi k (x-x0))
 #
@@ -53,13 +70,12 @@ cfg_file = args.config
 with open(cfg_file, 'r') as file:
     cfg = yaml.safe_load(file)
 
-
 outputdir = cfg['outputdir']
 makedirs(outputdir, exist_ok=True)
 with open(join(outputdir, cfg_file.split('/')[-1]), 'w') as file:
     yaml.dump(cfg, file)
 
-np.random.seed(41)
+np.random.seed(cfg['seed'])
 
 noise_scale = cfg['data']['noise_scale']
 
@@ -72,19 +88,25 @@ npix_source = cfg['spaces']['source_space']['Npix']
 dist_source = cfg['spaces']['source_space']['distance']
 
 lens_space = cf.Space(npix_lens, dist_lens)
+source_space = cf.Space(npix_source, dist_source)
 
 
 if cfg['mock']:
-    s, d, c_data, d_data = create_mock_data(cfg)
+    s, d, c_data, d_data = create_mock_data(
+        lens_space,
+        source_space,
+        noise_scale,
+        cfg['seed'],
+        cfg['mock_data'])
 else:
     d = load_fits(cfg['files']['data_path'])
     if cfg['files']['source_path'] is not None:
         s = load_fits(cfg['files']['source_path'])
     else:
         s = np.ones(npix_source)
-
         c_data = None
         d_data = None
+
 
 snrmask = (PsfOperator(d, smoother) > 2*noise_scale)
 SNR = d[snrmask].sum()/(noise_scale*np.sqrt(snrmask.sum()))
