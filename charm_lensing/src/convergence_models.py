@@ -1,10 +1,26 @@
 #!/usr/bin/env python3
 import jax.numpy as jnp
+import numpy as np
 import nifty8 as ift
-from nifty8 import JaxOperator
+from nifty8 import JaxOperator, is_linearization
 from cluster_fits import Space, EllipticalNfw
 from jax import custom_jvp
 from functools import reduce
+
+
+class ConstantOperator(ift.LinearOperator):
+    def __init__(self, field):
+        self._domain = ift.makeDomain(field.domain)
+        self._target = ift.makeDomain(field.domain)
+        self._field = field
+        self._linearization_field = ift.makeField(
+            self._domain, np.zeros_like(field.val))
+        self._capability = self.TIMES | self.ADJOINT_TIMES
+
+    def apply(self, x, mode):
+        if is_linearization(x):
+            return self._linearization_field
+        return self._field
 
 
 @custom_jvp
@@ -74,7 +90,22 @@ def distribution_getter(prefix, values):
         value = ift.Field.from_raw(
             ift.UnstructuredDomain(values['N_copies']), values['mean']
         )
-        return ift.DiagonalOperator(value).ducktape_left(values['key']).ducktape(values['key'])
+        return {values['key']: value.val}
+
+
+def unite_dict(a: dict, b: dict) -> dict:
+    '''Returns union of a and b'''
+    tmp = {}
+    tmp.update(a)
+    tmp.update(b)
+    return tmp
+
+
+def all_parameters(constants):
+    def constants_plus_learned(x):
+        return unite_dict(constants, x)
+        # return constants.unite(x)
+    return constants_plus_learned
 
 
 def get_nfw_operator(ift_lens_space, cfg):
@@ -84,27 +115,39 @@ def get_nfw_operator(ift_lens_space, cfg):
 
     prefix = cfg['priors']['lens']['nfw']['prefix']
     prior_keys = ['b', 'rs', 'center', 'theta', 'q']
+
+    constant_keys = []
     prior_transform = []
     for key in prior_keys:
-        prior_transform.append(
-            distribution_getter(
+        oper = distribution_getter(
                 prefix,
-                cfg['priors']['lens']['nfw'][key],
-            )
-        )
-    prior_transform = reduce(lambda x,y: x+y, prior_transform)
+                cfg['priors']['lens']['nfw'][key])
 
-    prior_keys = [prefix + key for key in prior_keys]
+        if type(oper) is dict:
+            constant_keys.append(oper)
+        else:
+            prior_transform.append(oper)
+
+    prior_transform = reduce(lambda x,y: x+y, prior_transform)
+    constants = reduce(unite_dict, constant_keys)
+    # constants = ift.MultiField.from_dict(constants)
+
+    constants_plus_learned = all_parameters(constants)
+
+    model_keys = [prefix + key for key in prior_keys]
     ENFW = ift.JaxOperator(
         prior_transform.target,
         ift_lens_space,
         lambda x: nfw_convergence(
-            (x[key] for key in prior_keys),
+            (constants_plus_learned(x)[key] for key in model_keys),
             coords
         ))
 
     return {'convergence_mean': ENFW @ prior_transform,
-            'prior_transform': prior_transform}
+            'prior_transform': prior_transform,
+            'all_parameters': constants_plus_learned,
+            'constants': constants,
+            }
 
 
 def get_convergence_model(cfg):
@@ -139,4 +182,8 @@ if __name__ == '__main__':
     npix_lens = cfg['spaces']['lens_space']['Npix']
     dist_lens = cfg['spaces']['lens_space']['distance']
     ift_lens_space = ift.RGSpace(npix_lens, dist_lens)
-    ENFW = get_nfw_operator(ift_lens_space, cfg)
+    operators = get_nfw_operator(ift_lens_space, cfg)
+
+    x = ift.full(operators['prior_transform'].domain, 0.1)
+    x = operators['prior_transform'](x)
+    result = operators['all_parameters'](x)
