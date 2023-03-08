@@ -15,3 +15,43 @@ git@gitlab.mpcdf.mpg.de:jruestig/lensing.git
 
 
 - astropy
+
+TODO:
+- Shear model
+- Build in lens-light
+- Volume factors between source and lensplane/lens_space ?
+- Better MOCKS: Put prior range into data generation & initialize by some seed
+
+- Find a way to detect sub-structures (update z & b)
+
+- What could be the correlation structure of the lens-profile
+
+- Try on real data
+- Try with Aleksandra data
+
+
+CODE STRUCTURE:
+1. make Spaces as a seperate Class
+  - lens/image space will be an instance
+  - source space will be an instance to that
+  - it holds xycoords which are defined with respect to a center variable
+  - it should make the logic of instantiating the right xycoords conversion for the interpolator
+    more clear
+  - probably holds the nifty RGSpace as an value
+
+2. Plotting Routine
+  - plotting for real data
+  - plotting for mock data (separate)
+  - plotting component separation in convergence fs
+  - plot samples
+
+
+IDEAS:
+- Lens shift in Fourier-space: e^(2pi k (x-x0))
+
+DONE:
+- Find the transpose bug (maybe, why is source transposed but rest fine?)
+- Blurring with psf [DONE]
+- Source-Source reconstruction
+- Update NFW profile (x0, y0, rs)
+- Try with smaller NFW substructures

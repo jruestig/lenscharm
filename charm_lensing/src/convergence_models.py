@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-import jax.numpy as jnp
-import numpy as np
-import nifty8 as ift
-from nifty8 import JaxOperator, is_linearization
-from cluster_fits import Space, EllipticalNfw
-from jax import custom_jvp
 from functools import reduce, partial
+
+import jax.numpy as jnp
+import nifty8 as ift
+from cluster_fits import Space
+from jax import custom_jvp
 
 
 @custom_jvp
@@ -145,7 +144,6 @@ def get_convergence_model(cfg):
 
 
 if __name__ == '__main__':
-    from sys import exit
     import yaml
 
     cfg_file = '/home/jruestig/pro/python/lensing/configs/first_config.yaml'
