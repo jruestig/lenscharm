@@ -35,7 +35,7 @@ mock_data:
     a00: 0.04
     a11: 0.14
   hubble:
-    hubble_path: './data/sources.npy'
+    hubble_path: '/home/jruestig/Data/source_images/sources.npy'
     source_id: 6441
     distance: 0.04
     source_maximum: 8
@@ -94,37 +94,30 @@ priors:
 
   lens:
     nfw:
-      prefix: 'nfw_'
-      circular: False
       b:
-        key: 'b'
+        distribution: null
         mean: 1.0
         sigma: 0.0001
-        distribution: null
         N_copies: 1
       rs:
-        key: 'rs'
+        distribution: 'log_normal'
         mean: 0.5
         sigma: 0.08
-        distribution: 'log_normal'
         N_copies: 1
       center:
-        key: 'center'
+        distribution: 'normal'
         mean: 0.
         sigma: 0.5
-        distribution: 'normal'
         N_copies: 2
       q:
-        key: 'q'
-        mean: 1. # Fixme: this should be at most 1
-        sigma: 0.5
         distribution: 'log_normal'
+        mean: 1. # FIXME: this should be at most 1
+        sigma: 0.5
         N_copies: 1
       theta:
-        key: 'theta'
+        distribution: 'normal'
         mean: 0.0
         sigma: 10
-        distribution: 'normal'
         N_copies: 1
     offset:
       offset_mean: -0.2
