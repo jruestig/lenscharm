@@ -34,6 +34,7 @@ if __name__ == '__main__':
         yaml.dump(cfg, file)
 
     np.random.seed(cfg['seed'])
+    ift.random.push_sseq_from_seed(cfg['seed'])
 
     noise_scale = cfg['data']['noise_scale']
 
