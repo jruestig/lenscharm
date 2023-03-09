@@ -13,7 +13,7 @@ from charm_lensing.src.convergence_models import get_convergence_model
 from charm_lensing.src.linear_interpolation import Interpolation
 from charm_lensing.src.mock_data import create_mock_data
 from charm_lensing.src.operators import Reshaper
-from charm_lensing.src.plotting import deflection_check, Ls_check
+from charm_lensing.src.plotting import deflection_check, Ls_check, prior_samples_plotting
 from charm_lensing.src.psf_operator import PsfOperator
 from charm_lensing.src.source_model import source_model
 from charm_lensing.src.utils import (load_fits, smoother)
@@ -82,52 +82,27 @@ if __name__ == '__main__':
     ift_source_space = ift.RGSpace(npix_source, dist_source)
     ift_lens_space = ift.RGSpace(npix_lens, dist_lens)
     ift_data_space = ift.RGSpace(d.shape, distances=dist_lens)
-
     pointsdomain = ift.UnstructuredDomain(lens_space.xycoords.reshape(2, -1).shape)
 
-    # Source
+    # Source Model
     source_dict = source_model(cfg)
-    source_mean = source_dict['source_mean']
-    source_matern = source_dict['source_matern']
     source_diffuse = source_dict['source_diffuse']
 
-    # # Paramatric Source
-    # spriors = {'Gauss_0_A': ('lognorm', 55., 3.),
-    #            'Gauss_0_x0': ('normal', 0.0, 0.5),
-    #            'Gauss_0_y0': ('normal', 0.0, 0.5),
-    #            'Gauss_0_a00': ('lognorm', .60, 0.3),
-    #            'Gauss_0_a11': ('lognorm', .60, 0.3)}
-    # from NiftyOperators import PriorTransform
-    # sprior = PriorTransform(spriors)
-    # smodel = ift.JaxOperator(
-    #     sprior.domain,
-    #     isspace,
-    #     lambda x: So.brightness_field(x)
-    # )
-    # source_diffuse = smodel @ sprior
-    # Mean convergence
-
-    lens_dict = get_convergence_model(cfg)
-    convergence_model = lens_dict['convergence']
+    # Convergence Model
+    convergence_dict = get_convergence_model(cfg)
+    convergence_model = convergence_dict['full_model_convergence']
 
     # Deflection Angle Converter
-    tmpdeflection = cf.DeflectionAngle(lens_space)
-    deflection = ift.JaxLinearOperator(
-        ift_lens_space,
-        pointsdomain,
-        lambda x: tmpdeflection(x).reshape(2, -1),
-        domain_dtype=float
-    )
-    tmpdeflection = cf.DeflectionAngle(lens_space)
+    deflection = cf.DeflectionAngle(lens_space)
 
     # Full Lens model
     upperleftcorner = np.multiply(
         ift_source_space.shape, ift_source_space.distances).reshape(2, 1) / 2
-    lensmodel = ift.JaxOperator(
+    lens_model = ift.JaxOperator(
         ift_lens_space,
         pointsdomain,
         lambda x: (upperleftcorner - ift_source_space.distances[0] / 2 +
-                   (lens_space.xycoords - tmpdeflection(x)).reshape(2, -1))
+                   (lens_space.xycoords - deflection(x)).reshape(2, -1))
     )
 
     # FULL MODEL
@@ -143,96 +118,23 @@ if __name__ == '__main__':
         B = partial(PsfOperator, kernel=psf)
         ift_Psf = ift.JaxLinearOperator(ift_data_space, ift_data_space, B, domain_dtype=float)
 
-    # Try source reconstruction
-    lens = lensmodel @ convergence_model
-    fullmodel = ift_Psf @ Re @ interpolator @ (
+    # Full model
+    lens = lens_model @ convergence_model
+    full_model = ift_Psf @ Re @ interpolator @ (
             lens.ducktape_left('lens') +
             source_diffuse.ducktape_left('source')
     )
 
     if cfg['priorsamples']:
-        imargs = {'extent': lens_space.extent}
         for ii in range(10):
-            prior_pos = ift.from_random(fullmodel.domain)
-
-            vals = lens_dict['prior_transform'].force(prior_pos).val
-            for key, val in vals.items():
-                print(key, val)
-
-            Ls_prior = fullmodel(prior_pos)
-            source = source_diffuse.force(prior_pos)
-            conv = convergence_model.force(prior_pos)
-            defl = deflection(convergence_model.force(prior_pos))
-
-            fig, axes = plt.subplots(3, 3)
-
-            # Source
-            im = axes[0, 0].imshow(s, **imargs)
-            plt.colorbar(im, ax=axes[0, 0])
-            axes[0, 0].set_title('s')
-
-            im = axes[0, 1].imshow(source.val.T, **imargs)
-            plt.colorbar(im, ax=axes[0, 1])
-            axes[0, 1].set_title('source_prior')
-
-            maternkernel = source_matern.force(prior_pos).exp()
-            im = axes[0, 2].imshow(maternkernel.val.T, **imargs)
-            plt.colorbar(im, ax=axes[0, 2])
-            axes[0, 2].set_title('source_matern')
-
-            # Ls
-            im = axes[1, 1].imshow(Ls_prior.val.T, **imargs)
-            plt.colorbar(im, ax=axes[1, 1])
-            axes[1, 1].set_title('Ls_prior')
-
-            im = axes[1, 0].imshow(d, **imargs)
-            plt.colorbar(im, ax=axes[1, 0])
-            axes[1, 0].set_title('data')
-
-            # Kappa
-            im = axes[2, 0].imshow(conv.val.T, **imargs)
-            plt.colorbar(im, ax=axes[2, 0])
-            axes[2, 0].set_title('Kappa (convergence)')
-
-            im = axes[2, 1].imshow(np.hypot(*defl.val).reshape(*npix_lens).T,
-                                   # vmax=(np.hypot(*ddata)).max(),
-                                   **imargs)
-            plt.colorbar(im, ax=axes[2, 1])
-            axes[2, 1].set_title('alpha (deflectionangle)')
-
-            # NFW
-            nfw = lens_dict['convergence_mean'].force(prior_pos)
-            im = axes[2, 2].imshow(nfw.val.T,
-                                   # vmax=(np.hypot(*ddata)).max(),
-                                   **imargs)
-            plt.colorbar(im, ax=axes[2, 2])
-            axes[2, 2].set_title(f'NFW center={vals["nfw_center"]}')
-
-
-            # im = axes[1, 2].imshow(np.hypot(*ddata).reshape(*dshape), **imargs)
-            # plt.colorbar(im, ax=axes[1, 2])
-            # axes[1, 2].set_title('alpha_true (deflectionangle)')
-
-            # conv = (correlated_convergence.force(priorpos).exp())
-            # im = axes[2, 2].imshow(conv.val.T, **imargs)
-            # plt.colorbar(im, ax=axes[2, 2]) #
-            # axes[2, 2].set_title('convergence correlated')
-
-            # im = axes[1, 3].imshow(
-            #     np.hypot(*(deflection(convergence_check.exp()).val.reshape(2, *npix_lens))).T,
-            #     # vmax=(np.hypot(*ddata)).max(),
-            #     **imargs)
-            # plt.colorbar(im, ax=axes[1, 3])
-            # axes[1, 3].set_title('convergence adder')
-
-            plt.show()
-            plt.close()
+            prior_samples_plotting(
+                full_model, convergence_dict, source_dict, s, d, lens_space.extent)
 
     # Data & Likelihood
     data = ift.makeField(ift_data_space, d)
     N = ift.ScalingOperator(ift_data_space, noise_scale ** 2, sampling_dtype=float)
     likelihood_energy = (
-            ift.GaussianEnergy(data=data, inverse_covariance=N.inverse) @ fullmodel
+            ift.GaussianEnergy(data=data, inverse_covariance=N.inverse) @ full_model
     )
 
     # Minimizers
@@ -258,7 +160,7 @@ if __name__ == '__main__':
             ii,
             outputdir=outputdir,
             source_model=source_diffuse,
-            forward_model=fullmodel,
+            forward_model=full_model,
             true_source=s,
             data=d,
             noise_scale=noise_scale,

@@ -1,7 +1,7 @@
 mock: True
-outputdir: 'output/fullmodel/freenfw'
-seed: 41
-priorsamples: False
+outputdir: 'output/fullmodel/freepiemd/newlog'
+seed: 31
+priorsamples: True
 calculate_elbo: False
 data_plot: False
 
@@ -93,7 +93,7 @@ priors:
         - 5e-1
 
   lens:
-    nfw:
+    piemd:
       b:
         distribution: null
         mean: 1.0
@@ -101,17 +101,17 @@ priors:
         N_copies: 1
       rs:
         distribution: 'log_normal'
-        mean: 0.5
-        sigma: 0.08
+        mean: 0.1
+        sigma: 0.05
         N_copies: 1
       center:
         distribution: 'normal'
         mean: 0.
-        sigma: 0.5
+        sigma: 0.2
         N_copies: 2
       q:
-        distribution: 'log_normal'
-        mean: 1. # FIXME: this should be at most 1
+        distribution: 'uniform'
+        mean: 0.5 # FIXME: this should be at most 1
         sigma: 0.5
         N_copies: 1
       theta:
@@ -149,7 +149,7 @@ minimization:
   ic_newton:
     convergence_level: 2
     deltaE: 0.1
-    iteration_limit: 15
+    iteration_limit: 10
     name: Newton
   ic_sampling:
     deltaE: 0.05

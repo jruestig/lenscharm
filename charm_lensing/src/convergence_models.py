@@ -79,6 +79,39 @@ def get_nfw_operator(ift_lens_space, prefix, nfw_cfg):
             }
 
 
+def piemd_convergence(params, coords):
+    b, rs, center, q, theta = params
+
+    f, bc = 1/q, rs/q
+    x, y = rotation((coords[0]-center[0], coords[1]-center[1]), theta)
+    return jnp.log(b*jnp.sqrt(f)/(2*jnp.sqrt(x**2+f**2*y**2+bc**2)))
+
+
+def get_piemd_operator(ift_lens_space, prefix, piemd_cfg):
+    coords = Space(ift_lens_space.shape, ift_lens_space.distances).xycoords
+
+    prior_keys = ['b', 'rs', 'center', 'q', 'theta']
+    model_keys = ['_'.join((prefix, key)) for key in prior_keys]
+
+    piemd_priors = ParamatricPrior(prefix, piemd_cfg)
+    free_parameters = piemd_priors.free_parameter_operator
+    constant_parameters = piemd_priors.constant_parameter_operator
+
+    PIEMD = ift.JaxOperator(
+        free_parameters.target,
+        ift_lens_space,
+        lambda x: piemd_convergence(
+            (constant_parameters(x)[key] for key in model_keys),
+            coords
+        ))
+
+    return {'mean_convergence': PIEMD @ free_parameters,
+            'mean_convergence_prior': free_parameters,
+            'mean_convergence_constants': constant_parameters,
+            }
+
+
+
 def get_convergence_model(cfg):
     npix_lens = cfg['spaces']['lens_space']['Npix']
     dist_lens = cfg['spaces']['lens_space']['distance']
@@ -87,9 +120,8 @@ def get_convergence_model(cfg):
     cfm_maker = ift.CorrelatedFieldMaker('lens_')
     cfm_maker.set_amplitude_total_offset(**cfg['priors']['lens']['offset'])
     cfm_maker.add_fluctuations(ift_lens_space, **cfg['priors']['lens']['fluctuations'])
-    correlated_convergence = cfm_maker.finalize()
-
-    correlated_pspec = cfm_maker.power_spectrum
+    perturbations_convergence = cfm_maker.finalize()
+    perturbations_pspec = cfm_maker.power_spectrum
 
     # FIXME: Works only for one NFW profile
     for key in cfg['priors']['lens']:
@@ -97,9 +129,14 @@ def get_convergence_model(cfg):
             res = get_nfw_operator(
                 ift_lens_space, key, cfg['priors']['lens'][key])
 
-    res['convergence'] = (res['convergence_mean'] + correlated_convergence).exp()
-    res['correlated_convergence'] = correlated_convergence
-    res['correlated_pspec'] = correlated_pspec
+        elif key.split('_')[0].lower() in ['piemd']:
+            res = get_piemd_operator(
+                ift_lens_space, key, cfg['priors']['lens'][key]
+            )
+
+    res['full_model_convergence'] = (res['mean_convergence'] + perturbations_convergence).exp()
+    res['perturbations_convergence'] = perturbations_convergence
+    res['perturbations_pspec'] = perturbations_pspec
 
     return res
 
@@ -115,9 +152,3 @@ if __name__ == '__main__':
     dist_lens = cfg['spaces']['lens_space']['distance']
     ift_lens_space = ift.RGSpace(npix_lens, dist_lens)
     operators = get_nfw_operator(ift_lens_space, 'nfw', cfg['priors']['lens']['nfw'])
-
-    exit()
-
-    x = ift.full(operators['prior_transform'].domain, 0.1)
-    x = operators['prior_transform'](x)
-    result = operators['all_parameters'](x)
