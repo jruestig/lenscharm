@@ -1,7 +1,7 @@
 mock: True
 outputdir: 'output/fullmodel/freenfw'
 seed: 41
-priorsamples: True
+priorsamples: False
 calculate_elbo: False
 data_plot: False
 
@@ -35,7 +35,7 @@ mock_data:
     a00: 0.04
     a11: 0.14
   hubble:
-    hubble_path: '/home/jruestig/Data/source_images/sources.npy'
+    hubble_path: './data/sources.npy'
     source_id: 6441
     distance: 0.04
     source_maximum: 8
@@ -58,19 +58,19 @@ mock_data:
     CNFW_0_y0: 1.5
 
 files:
-  psf_path: '/home/jruestig/Data/source_images/birrer_comparison/psf.fits'
+  psf_path: null
   data_path: '/home/jruestig/Data/source_images/birrer_comparison/data.fits'
   source_path: '/home/jruestig/Data/source_images/birrer_comparison/source.fits'
 
 priors:
   source:
     center:
-      mean: -0.5
+      mean: 0.
       sigma: 0.2
       key: 'source_center'
     covariance:
       mean: 0.2
-      sigma: 1e-3
+      sigma: 1e-2
       key: 'source_covariance'
     off_diagonal:
       mean: 0.01
@@ -106,24 +106,24 @@ priors:
         key: 'rs'
         mean: 0.5
         sigma: 0.08
-        distribution: null
+        distribution: 'log_normal'
         N_copies: 1
       center:
         key: 'center'
         mean: 0.
-        sigma: 0.05
+        sigma: 0.5
         distribution: 'normal'
         N_copies: 2
       q:
         key: 'q'
-        mean: 0.9
-        sigma: 0.1
+        mean: 1. # Fixme: this should be at most 1
+        sigma: 0.5
         distribution: 'log_normal'
         N_copies: 1
       theta:
         key: 'theta'
         mean: 0.0
-        sigma: 2E1
+        sigma: 10
         distribution: 'normal'
         N_copies: 1
     offset:
@@ -156,7 +156,7 @@ minimization:
   ic_newton:
     convergence_level: 2
     deltaE: 0.1
-    iteration_limit: 10
+    iteration_limit: 15
     name: Newton
   ic_sampling:
     deltaE: 0.05

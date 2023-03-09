@@ -18,46 +18,6 @@ from charm_lensing.src.psf_operator import PsfOperator
 from charm_lensing.src.source_model import source_model
 from charm_lensing.src.utils import (load_fits, smoother)
 
-# TODO:
-# - Shear model
-# - Build in lens-light
-# - Volume factors between source and lensplane/lens_space ?
-# - Better MOCKS: Put prior range into data generation & initialize by some seed
-#
-# - Find a way to detect sub-structures (update z & b)
-#
-# - What could be the correlation structure of the lens-profile
-#
-# - Try on real data
-# - Try with Aleksandra data
-#
-#
-# CODE STRUCTURE:
-# 1. make Spaces as a seperate Class
-#   - lens/image space will be an instance
-#   - source space will be an instance to that
-#   - it holds xycoords which are defined with respect to a center variable
-#   - it should make the logic of instantiating the right xycoords conversion for the interpolator
-#     more clear
-#   - probably holds the nifty RGSpace as an value
-#
-# 2. Plotting Routine
-#   - plotting for real data
-#   - plotting for mock data (separate)
-#   - plotting component separation in convergence fs
-#
-#
-# IDEAS:
-# - Lens shift in Fourier-space: e^(2pi k (x-x0))
-#
-# DONE:
-# - Find the transpose bug (maybe, why is source transposed but rest fine?)
-# - Blurring with psf [DONE]
-# - Source-Source reconstruction
-# - Update NFW profile (x0, y0, rs)
-# - Try with smaller NFW substructures
-
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("config", help="Config File", type=str, nargs='?',
@@ -77,7 +37,6 @@ if __name__ == '__main__':
 
     noise_scale = cfg['data']['noise_scale']
 
-
     # Space convenience
     npix_lens = cfg['spaces']['lens_space']['Npix']
     dist_lens = cfg['spaces']['lens_space']['distance']
@@ -87,7 +46,6 @@ if __name__ == '__main__':
 
     lens_space = cf.Space(npix_lens, dist_lens)
     source_space = cf.Space(npix_source, dist_source)
-
 
     if cfg['mock']:
         s, d, c_data, d_data = create_mock_data(
@@ -105,12 +63,12 @@ if __name__ == '__main__':
             c_data = None
             d_data = None
 
-
-    snrmask = (PsfOperator(d, smoother) > 2*noise_scale)
-    SNR = d[snrmask].sum()/(noise_scale*np.sqrt(snrmask.sum()))
+    snrmask = (PsfOperator(d, smoother) > 2 * noise_scale)
+    SNR = d[snrmask].sum() / (noise_scale * np.sqrt(snrmask.sum()))
 
     if cfg['data_plot']:
         from matplotlib.colors import LogNorm
+
         fig, axes = plt.subplots(2, 2)
         axes[0, 0].imshow(s, origin='lower')
         axes[0, 1].imshow(d, origin='lower')
@@ -119,14 +77,12 @@ if __name__ == '__main__':
         axes[1, 1].imshow(np.hypot(*d_data), origin='lower')
         plt.show()
 
-
     # SPACES
     ift_source_space = ift.RGSpace(npix_source, dist_source)
     ift_lens_space = ift.RGSpace(npix_lens, dist_lens)
     ift_data_space = ift.RGSpace(d.shape, distances=dist_lens)
 
     pointsdomain = ift.UnstructuredDomain(lens_space.xycoords.reshape(2, -1).shape)
-
 
     # Source
     source_dict = source_model(cfg)
@@ -163,21 +119,19 @@ if __name__ == '__main__':
     )
     tmpdeflection = cf.DeflectionAngle(lens_space)
 
-
     # Full Lens model
     upperleftcorner = np.multiply(
-        ift_source_space.shape, ift_source_space.distances).reshape(2, 1)/2
+        ift_source_space.shape, ift_source_space.distances).reshape(2, 1) / 2
     lensmodel = ift.JaxOperator(
         ift_lens_space,
         pointsdomain,
-        lambda x: (upperleftcorner - ift_source_space.distances[0]/2 +
+        lambda x: (upperleftcorner - ift_source_space.distances[0] / 2 +
                    (lens_space.xycoords - tmpdeflection(x)).reshape(2, -1))
     )
 
     # FULL MODEL
     interpolator = Interpolation(ift_source_space, 'source', pointsdomain, 'lens')
     Re = Reshaper(interpolator.target, ift_data_space)
-
 
     # Psf Operator
     if cfg['files']['psf_path'] is None:
@@ -188,30 +142,26 @@ if __name__ == '__main__':
         B = partial(PsfOperator, kernel=psf)
         ift_Psf = ift.JaxLinearOperator(ift_data_space, ift_data_space, B, domain_dtype=float)
 
-
     # Try source reconstruction
     lens = lensmodel @ convergence_model
     fullmodel = ift_Psf @ Re @ interpolator @ (
-        lens.ducktape_left('lens') +
-        source_diffuse.ducktape_left('source')
+            lens.ducktape_left('lens') +
+            source_diffuse.ducktape_left('source')
     )
-
 
     if cfg['priorsamples']:
         imargs = {'extent': lens_space.extent}
         for ii in range(10):
-            priorpos = ift.from_random(fullmodel.domain)
+            prior_pos = ift.from_random(fullmodel.domain)
 
-
-            vals = lens_dict['prior_transform'].force(priorpos).val
+            vals = lens_dict['prior_transform'].force(prior_pos).val
             for key, val in vals.items():
                 print(key, val)
 
-
-            Ls_prior = fullmodel(priorpos)
-            source = source_diffuse.force(priorpos)
-            conv = convergence_model.force(priorpos)
-            defl = deflection(convergence_model.force(priorpos))
+            Ls_prior = fullmodel(prior_pos)
+            source = source_diffuse.force(prior_pos)
+            conv = convergence_model.force(prior_pos)
+            defl = deflection(convergence_model.force(prior_pos))
 
             fig, axes = plt.subplots(3, 3)
 
@@ -224,7 +174,7 @@ if __name__ == '__main__':
             plt.colorbar(im, ax=axes[0, 1])
             axes[0, 1].set_title('source_prior')
 
-            maternkernel = source_matern.force(priorpos).exp()
+            maternkernel = source_matern.force(prior_pos).exp()
             im = axes[0, 2].imshow(maternkernel.val.T, **imargs)
             plt.colorbar(im, ax=axes[0, 2])
             axes[0, 2].set_title('source_matern')
@@ -244,10 +194,19 @@ if __name__ == '__main__':
             axes[2, 0].set_title('Kappa (convergence)')
 
             im = axes[2, 1].imshow(np.hypot(*defl.val).reshape(*npix_lens).T,
-                                # vmax=(np.hypot(*ddata)).max(),
-                                **imargs)
+                                   # vmax=(np.hypot(*ddata)).max(),
+                                   **imargs)
             plt.colorbar(im, ax=axes[2, 1])
             axes[2, 1].set_title('alpha (deflectionangle)')
+
+            # NFW
+            nfw = lens_dict['convergence_mean'].force(prior_pos)
+            im = axes[2, 2].imshow(nfw.val.T,
+                                   # vmax=(np.hypot(*ddata)).max(),
+                                   **imargs)
+            plt.colorbar(im, ax=axes[2, 2])
+            axes[2, 2].set_title(f'NFW center={vals["nfw_center"]}')
+
 
             # im = axes[1, 2].imshow(np.hypot(*ddata).reshape(*dshape), **imargs)
             # plt.colorbar(im, ax=axes[1, 2])
@@ -266,16 +225,14 @@ if __name__ == '__main__':
             # axes[1, 3].set_title('convergence adder')
 
             plt.show()
-
+            plt.close()
 
     # Data & Likelihood
     data = ift.makeField(ift_data_space, d)
-    N = ift.ScalingOperator(ift_data_space, noise_scale**2, sampling_dtype=float)
+    N = ift.ScalingOperator(ift_data_space, noise_scale ** 2, sampling_dtype=float)
     likelihood_energy = (
-        ift.GaussianEnergy(data=data, inverse_covariance=N.inverse) @ fullmodel
+            ift.GaussianEnergy(data=data, inverse_covariance=N.inverse) @ fullmodel
     )
-
-
 
     # Minimizers
     linear_sampling = ift.AbsDeltaEnergyController(**cfg['minimization']['ic_sampling'])
@@ -286,7 +243,8 @@ if __name__ == '__main__':
             if iteration < cfg['minimization']['geovi_start']:
                 return None
             else:
-                ic_sampling_nl = ift.AbsDeltaEnergyController(**cfg['minimization']['ic_sampling_nl'])
+                ic_sampling_nl = ift.AbsDeltaEnergyController(
+                    **cfg['minimization']['ic_sampling_nl'])
                 return ift.NewtonCG(ic_sampling_nl)
     else:
         nonlinear_sampling = None
@@ -319,10 +277,8 @@ if __name__ == '__main__':
         plt.close()
 
 
-
-    ic_newton = ift.AbsDeltaEnergyController(name='Newton', deltaE=0.001, iteration_limit=10)
+    ic_newton = ift.AbsDeltaEnergyController(**cfg['minimization']['ic_newton'])
     minimizer = ift.NewtonCG(ic_newton)
-
 
     samples = ift.optimize_kl(
         likelihood_energy,
