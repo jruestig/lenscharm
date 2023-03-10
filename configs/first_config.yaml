@@ -1,7 +1,7 @@
 mock: True
 outputdir: 'output/fullmodel/freepiemd_shear'
 seed: 42
-prior_samples: False
+prior_samples: True
 calculate_elbo: False
 data_plot: False
 
@@ -124,7 +124,7 @@ priors:
       strength:
         distribution: 'normal'
         mean: 0
-        sigma: 0.01
+        sigma: 0.07
         N_copies: 1
       theta:
         distribution: 'normal'

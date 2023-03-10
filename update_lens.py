@@ -81,11 +81,11 @@ if __name__ == '__main__':
         SNR = d[snrmask].sum() / (noise_scale * np.sqrt(snrmask.sum()))
 
         fig, axes = plt.subplots(2, 2)
-        axes[0, 0].imshow(s, origin='lower')
+        axes[0, 0].imshow(real_source, origin='lower')
         axes[0, 1].imshow(d, origin='lower')
         axes[0, 1].set_title(SNR)
-        axes[1, 0].imshow(real_convergence, norm=LogNorm(), origin='lower')
-        axes[1, 1].imshow(np.hypot(*real_deflection), origin='lower')
+        axes[1, 0].imshow(data_dict['real_convergence'], origin='lower')
+        axes[1, 1].imshow(np.hypot(*data_dict['real_deflection']), origin='lower')
         plt.show()
 
     # SPACES
