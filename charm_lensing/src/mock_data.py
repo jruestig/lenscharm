@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
+from typing import Tuple, Any
+
 import cluster_fits as cf
 from cluster_fits import Space
 
 import numpy as np
+from jax import Array
+from numpy import ndarray
 from scipy.interpolate import RectBivariateSpline
 
 from charm_lensing.src.spaces import coords
@@ -62,7 +66,7 @@ def create_mock_data(
         noise_scale: float,
         seed: float,
         mock_config: dict,
-) -> tuple[np.array]:
+) -> tuple[Any, int | float | Any, Any, Any]:
 
     np.random.seed(seed)
 
