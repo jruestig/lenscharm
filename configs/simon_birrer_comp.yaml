@@ -1,9 +1,9 @@
 mock: False
-outputdir: 'output/fullmodel/birrer_comparison'
+outputdir: 'output/fullmodel/birrer_comparison_shear'
 seed: 41
-priorsamples: False
+prior_samples: True
 calculate_elbo: False
-data_plot: False
+data_plot: True
 
 spaces:
   lens_space:
@@ -25,18 +25,24 @@ spaces:
 data:
   noise_scale: 10.
 
-mockdata:
-  Type: 'Image'
-  GaussianSource:
+mock_data:
+  Type: 'hubble' # gaussian, hubble, fits
+  gaussian:
     A: 20
     x0: 0.24
     y0: 0.17
     a00: 0.04
     a11: 0.14
-  Image:
-    path: 'Hubble150'
+  hubble:
+    hubble_path: '/home/jruestig/Data/source_images/sources.npy'
+    source_id: 6441
     distance: 0.04
-    brightness: 8
+    source_maximum: 8
+  fits:
+    fits_path: '/home/jruestig/Data/source_images/ngc7320.fits'
+    # distance: 0.04
+    distance: 0.002
+    source_maximum: 500
   Lens:
     dPIE_0_b: 2.0044161
     dPIE_0_q: 1.47265484
@@ -45,16 +51,16 @@ mockdata:
     dPIE_0_th: 15.55583871
     dPIE_0_x0: 0.0320614
     dPIE_0_y0: 0.05448241
-    CNFW_0_b: 1.
+    CNFW_0_b: 1.0001
     CNFW_0_r_s: 0.3
     CNFW_0_x0: 0.0
     CNFW_0_y0: 1.5
 
-files:
-  psf_path: '/home/jruestig/Data/comparisons/psf.fits'
-  data_path: '/home/jruestig/Data/comparisons/data.fits'
-  source_path: '/home/jruestig/Data/comparisons/source.fits'
 
+files:
+  psf_path: '/home/jruestig/Data/source_images/birrer_comparison/psf.fits'
+  data_path: '/home/jruestig/Data/source_images/birrer_comparison/data.fits'
+  source_path: '/home/jruestig/Data/source_images/birrer_comparison/source.fits'
 
 priors:
   source:
@@ -87,28 +93,54 @@ priors:
         - 5e-1
 
   lens:
-    nfw:
-      prefix: 'nfw_'
-      circular: False
-      b: null
+    piemd:
+      b:
+        distribution: null
+        mean: 1.0
+        sigma: 0.0001
+        N_copies: 1
       rs:
-        key: 'rs'
-        mean: 0.01
-        sigma: 0.2
+        distribution: 'log_normal'
+        mean: 0.1
+        sigma: 0.05
+        N_copies: 1
       center:
-        key: 'center'
+        distribution: 'normal'
         mean: 0.
         sigma: 0.2
+        N_copies: 2
       q:
-        key: 'q'
+        distribution: 'uniform'
+        mean: 0.5 # FIXME: this should be at most 1
+        sigma: 0.5
+        N_copies: 1
       theta:
-        key: 'theta'
+        distribution: 'normal'
         mean: 0.0
-        sigma: 1E5
+        sigma: 10
+        N_copies: 1
+
+    shear:
+      strength:
+        distribution: 'normal'
+        mean: 0
+        sigma: 0.07
+        N_copies: 1
+      theta:
+        distribution: 'normal'
+        mean: 0.0
+        sigma: 10
+        N_copies: 1
+      center:
+        distribution: null
+        mean: 0.
+        sigma: 0.2
+        N_copies: 2
+
     offset:
-      offset_mean: -0.5
+      offset_mean: -0.2
       offset_std:
-        - 1e-2
+        - 1e-1
         - 1e-6
     fluctuations:
       fluctuations:
@@ -128,9 +160,9 @@ minimization:
   resume: False
   dry_run: False
   geovi: True
-  geovi_start: 2
+  geovi_start: 3
   total_iterations: 10
-  n_samples: 4 #'lambda i_iter: 6 if i_iter < 13 else 10'
+  n_samples: 5 #'lambda i_iter: 6 if i_iter < 13 else 10'
   ic_newton:
     convergence_level: 2
     deltaE: 0.1

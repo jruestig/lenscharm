@@ -26,3 +26,11 @@ smoother = multivariate_normal.pdf(
     mean=(0, 0)
 )
 smoother = smoother/smoother.sum()
+
+
+def unite_dict(a: dict, b: dict) -> dict:
+    '''Returns: union of a and b'''
+    tmp = {}
+    tmp.update(a)
+    tmp.update(b)
+    return tmp

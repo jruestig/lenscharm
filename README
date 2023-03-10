@@ -17,7 +17,6 @@ git@gitlab.mpcdf.mpg.de:jruestig/lensing.git
 - astropy
 
 TODO:
-- Shear model
 - Build in lens-light
 - Volume factors between source and lensplane/lens_space ?
 - Better MOCKS: Put prior range into data generation & initialize by some seed
@@ -50,8 +49,9 @@ IDEAS:
 - Lens shift in Fourier-space: e^(2pi k (x-x0))
 
 DONE:
-- Find the transpose bug (maybe, why is source transposed but rest fine?)
-- Blurring with psf [DONE]
-- Source-Source reconstruction
-- Update NFW profile (x0, y0, rs)
-- Try with smaller NFW substructures
+[x] Shear model
+[x] Find the transpose bug (maybe, why is source transposed but rest fine?)
+[x] Blurring with psf [DONE]
+[x] Source-Source reconstruction
+[x] Update NFW profile (x0, y0, rs)
+[x] Try with smaller NFW substructures

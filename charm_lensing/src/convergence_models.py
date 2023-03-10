@@ -6,6 +6,10 @@ import nifty8 as ift
 from cluster_fits import Space
 from jax import custom_jvp
 
+from charm_lensing.src import utils
+from charm_lensing.src import prior_handler
+
+from sys import exit
 
 @custom_jvp
 def F(x):
@@ -51,74 +55,59 @@ def nfw_convergence(params, coords): #
     return jnp.log(2*b*(1-F(x))/(x**2-1))
 
 
-def distribution_getter(prefix, values):
-    distribution = values.pop('distribution')
-    values['key'] = prefix + values['key']
+def get_nfw_operator(ift_lens_space, prefix, nfw_cfg):
+    coords = Space(ift_lens_space.shape, ift_lens_space.distances).xycoords
 
-    if distribution in ['uniform']:
-        return ift.UniformOperator(
-            ift.UnstructuredDomain(values['N_copies']),
-            loc=values['mean'],
-            scale=values['sigma']
-        ).ducktape(values['key']).ducktape_left(values['key'])
-
-    if distribution in ['normal']:
-        return ift.NormalTransform(**values).ducktape_left(values['key'])
-
-    if distribution in ['log_normal', 'lognormal']:
-        return ift.LognormalTransform(**values).ducktape_left(values['key'])
-
-    if distribution is None:
-        value = ift.Field.from_raw(
-            ift.UnstructuredDomain(values['N_copies']), values['mean']
-        )
-        print(f'Constant ({values["key"]}): {value.val}')
-        return {values['key']: value.val}
-
-
-def unite_dict(a: dict, b: dict) -> dict:
-    '''Returns: union of a and b'''
-    tmp = {}
-    tmp.update(a)
-    tmp.update(b)
-    return tmp
-
-
-def get_nfw_operator(ift_lens_space, cfg):
-    npix_lens = cfg['spaces']['lens_space']['Npix']
-    dist_lens = cfg['spaces']['lens_space']['distance']
-    coords = Space(npix_lens, dist_lens).xycoords
-
-    prefix = cfg['priors']['lens']['nfw']['prefix']
     prior_keys = ['b', 'rs', 'center', 'theta', 'q']
+    model_keys = ['_'.join((prefix, key)) for key in prior_keys]
 
-    constant_keys = []
-    prior_transform = []
-    for key in prior_keys:
-        oper = distribution_getter(
-                prefix,
-                cfg['priors']['lens']['nfw'][key])
-        if type(oper) is dict:
-            constant_keys.append(oper)
-        else:
-            prior_transform.append(oper)
-    prior_transform = reduce(lambda x,y: x+y, prior_transform)
-    constants = reduce(unite_dict, constant_keys)
-    constants_plus_learned = partial(unite_dict, b=constants)
+    nfw_priors = prior_handler.ParamatricPrior(prefix, nfw_cfg)
+    free_parameters = nfw_priors.free_parameter_operator
+    constant_parameters = nfw_priors.constant_parameter_operator
 
-    model_keys = [prefix + key for key in prior_keys]
     ENFW = ift.JaxOperator(
-        prior_transform.target,
+        free_parameters.target,
         ift_lens_space,
         lambda x: nfw_convergence(
-            (constants_plus_learned(x)[key] for key in model_keys),
+            (constant_parameters(x)[key] for key in model_keys),
             coords
         ))
 
-    return {'convergence_mean': ENFW @ prior_transform,
-            'prior_transform': prior_transform,
-            'all_parameters': constants_plus_learned,
-            'constants': constants,
+    return {'mean_convergence': ENFW @ free_parameters,
+            'mean_convergence_prior': free_parameters,
+            'mean_convergence_constants': constant_parameters,
+            }
+
+
+def piemd_convergence(params, coords):
+    b, rs, center, q, theta = params
+
+    f, bc = 1/q, rs/q
+    x, y = rotation((coords[0]-center[0], coords[1]-center[1]), theta)
+    return jnp.log(b*jnp.sqrt(f)/(2*jnp.sqrt(x**2+f**2*y**2+bc**2)))
+
+
+def get_piemd_operator(ift_lens_space, prefix, piemd_cfg):
+    coords = Space(ift_lens_space.shape, ift_lens_space.distances).xycoords
+
+    prior_keys = ['b', 'rs', 'center', 'q', 'theta']
+    model_keys = ['_'.join((prefix, key)) for key in prior_keys]
+
+    piemd_priors = prior_handler.ParamatricPrior(prefix, piemd_cfg)
+    free_parameters = piemd_priors.free_parameter_operator
+    constant_parameters = piemd_priors.constant_parameter_operator
+
+    PIEMD = ift.JaxOperator(
+        free_parameters.target,
+        ift_lens_space,
+        lambda x: piemd_convergence(
+            (constant_parameters(x)[key] for key in model_keys),
+            coords
+        ))
+
+    return {'mean_convergence': PIEMD @ free_parameters,
+            'mean_convergence_prior': free_parameters,
+            'mean_convergence_constants': constant_parameters,
             }
 
 
@@ -130,15 +119,23 @@ def get_convergence_model(cfg):
     cfm_maker = ift.CorrelatedFieldMaker('lens_')
     cfm_maker.set_amplitude_total_offset(**cfg['priors']['lens']['offset'])
     cfm_maker.add_fluctuations(ift_lens_space, **cfg['priors']['lens']['fluctuations'])
-    correlated_convergence = cfm_maker.finalize()
+    perturbations_convergence = cfm_maker.finalize()
+    perturbations_pspec = cfm_maker.power_spectrum
 
-    correlated_pspec = cfm_maker.power_spectrum
+    # FIXME: Works only for one NFW profile
+    for key in cfg['priors']['lens']:
+        if key.split('_')[0].lower() in ['nfw']:
+            res = get_nfw_operator(
+                ift_lens_space, key, cfg['priors']['lens'][key])
 
-    res = get_nfw_operator(ift_lens_space, cfg)
+        elif key.split('_')[0].lower() in ['piemd']:
+            res = get_piemd_operator(
+                ift_lens_space, key, cfg['priors']['lens'][key]
+            )
 
-    res['convergence'] = (res['convergence_mean'] + correlated_convergence).exp()
-    res['correlated_convergence'] = correlated_convergence
-    res['correlated_pspec'] = correlated_pspec
+    res['full_model_convergence'] = (res['mean_convergence'] + perturbations_convergence).exp()
+    res['perturbations_convergence'] = perturbations_convergence
+    res['perturbations_pspec'] = perturbations_pspec
 
     return res
 
@@ -153,8 +150,6 @@ if __name__ == '__main__':
     npix_lens = cfg['spaces']['lens_space']['Npix']
     dist_lens = cfg['spaces']['lens_space']['distance']
     ift_lens_space = ift.RGSpace(npix_lens, dist_lens)
-    operators = get_nfw_operator(ift_lens_space, cfg)
+    operators = get_nfw_operator(ift_lens_space, 'nfw', cfg['priors']['lens']['nfw'])
 
-    x = ift.full(operators['prior_transform'].domain, 0.1)
-    x = operators['prior_transform'](x)
-    result = operators['all_parameters'](x)
+    exit()
