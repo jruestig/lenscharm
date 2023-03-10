@@ -9,14 +9,14 @@ def deflection_check(samples_list,
                      ii,
                      outputdir=None,
                      convergence_model=None,
-                     deflection=None,
+                     deflection_model=None,
                      deflection_data=None,
                      convergence_data=None,
                      extent=None):
     mean, var = samples_list.sample_stat()
 
     convergence = convergence_model.force(mean).val
-    deflection_field = deflection(convergence_model.force(mean).val).reshape(
+    deflection_field = deflection_model.force(mean).val.reshape(
         2, *convergence.shape
     )
 
@@ -170,7 +170,8 @@ def Ls_check(
     plt.close()
 
 
-def prior_samples_plotting(full_model, convergence_dict, source_dict, real_source, data, extent):
+def prior_samples_plotting(
+        full_model, convergence_dict, source_dict, deflection_dict, data_dict, extent):
     imargs = {'extent': extent, 'origin': 'lower'}
 
     prior_pos = ift.from_random(full_model.domain)
@@ -187,9 +188,13 @@ def prior_samples_plotting(full_model, convergence_dict, source_dict, real_sourc
     mean_convergence = convergence_dict['mean_convergence'].force(prior_pos).exp()
     perturbations_convergence = convergence_dict['perturbations_convergence'].force(prior_pos).exp()
 
-    fig, axes = plt.subplots(3, 3)
+    full_deflection = deflection_dict['deflection_model'].force(prior_pos).val
+    shear_deflection = deflection_dict['deflection_shear'].force(prior_pos).val
+    convergence_deflection = deflection_dict['deflection_convergence'].force(prior_pos).val
+
+    fig, axes = plt.subplots(4, 3)
     # Source
-    im = axes[0, 0].imshow(real_source, **imargs)
+    im = axes[0, 0].imshow(data_dict['real_source'], **imargs)
     plt.colorbar(im, ax=axes[0, 0])
     axes[0, 0].set_title('real_source')
 
@@ -202,7 +207,7 @@ def prior_samples_plotting(full_model, convergence_dict, source_dict, real_sourc
     axes[0, 2].set_title('source_matern')
 
     # Ls
-    im = axes[1, 0].imshow(data, **imargs)
+    im = axes[1, 0].imshow(data_dict['real_data'], **imargs)
     plt.colorbar(im, ax=axes[1, 0])
     axes[1, 0].set_title('data')
 
@@ -210,7 +215,7 @@ def prior_samples_plotting(full_model, convergence_dict, source_dict, real_sourc
     plt.colorbar(im, ax=axes[1, 1])
     axes[1, 1].set_title('Ls model')
 
-    # Mean
+    # Mean Convergence
     im = axes[2, 0].imshow(mean_convergence.val.T, **imargs)
     plt.colorbar(im, ax=axes[2, 0])
     axes[2, 0].set_title(f'mean convergence')
@@ -220,10 +225,28 @@ def prior_samples_plotting(full_model, convergence_dict, source_dict, real_sourc
     plt.colorbar(im, ax=axes[2, 1])
     axes[2, 1].set_title(f'Perturbations convergence')
 
-    # Kappa
+    # Full convergence model
     im = axes[2, 2].imshow(full_convergence.val.T, **imargs)
     plt.colorbar(im, ax=axes[2, 2])
     axes[2, 2].set_title('full model convergence')
+
+    # Deflection
+    im = axes[3, 0].imshow(
+        np.hypot(*data_dict['real_deflection']), **imargs)
+    plt.colorbar(im, ax=axes[3, 0])
+    axes[3, 0].set_title('real deflection')
+
+    # Deflection
+    im = axes[3, 1].imshow(
+        np.hypot(*full_deflection.reshape(2, *mean_convergence.shape)), **imargs)
+    plt.colorbar(im, ax=axes[3, 1])
+    axes[3, 1].set_title('model deflection')
+
+    # Deflection
+    im = axes[3, 2].imshow(
+        np.hypot(*shear_deflection.reshape(2, *mean_convergence.shape)), **imargs)
+    plt.colorbar(im, ax=axes[3, 2])
+    axes[3, 2].set_title('shear deflection')
 
     print()
     plt.show()

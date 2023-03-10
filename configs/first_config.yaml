@@ -1,7 +1,7 @@
 mock: True
-outputdir: 'output/fullmodel/freepiemd/newlog'
-seed: 31
-priorsamples: True
+outputdir: 'output/fullmodel/freepiemd_shear'
+seed: 42
+prior_samples: False
 calculate_elbo: False
 data_plot: False
 
@@ -119,6 +119,24 @@ priors:
         mean: 0.0
         sigma: 10
         N_copies: 1
+
+    shear:
+      strength:
+        distribution: 'normal'
+        mean: 0
+        sigma: 0.01
+        N_copies: 1
+      theta:
+        distribution: 'normal'
+        mean: 0.0
+        sigma: 10
+        N_copies: 1
+      center:
+        distribution: null
+        mean: 0.
+        sigma: 0.2
+        N_copies: 2
+
     offset:
       offset_mean: -0.2
       offset_std:

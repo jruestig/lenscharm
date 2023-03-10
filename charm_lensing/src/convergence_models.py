@@ -7,7 +7,7 @@ from cluster_fits import Space
 from jax import custom_jvp
 
 from charm_lensing.src import utils
-from charm_lensing.src.prior_handler import ParamatricPrior
+from charm_lensing.src import prior_handler
 
 from sys import exit
 
@@ -61,7 +61,7 @@ def get_nfw_operator(ift_lens_space, prefix, nfw_cfg):
     prior_keys = ['b', 'rs', 'center', 'theta', 'q']
     model_keys = ['_'.join((prefix, key)) for key in prior_keys]
 
-    nfw_priors = ParamatricPrior(prefix, nfw_cfg)
+    nfw_priors = prior_handler.ParamatricPrior(prefix, nfw_cfg)
     free_parameters = nfw_priors.free_parameter_operator
     constant_parameters = nfw_priors.constant_parameter_operator
 
@@ -73,9 +73,9 @@ def get_nfw_operator(ift_lens_space, prefix, nfw_cfg):
             coords
         ))
 
-    return {'convergence_mean': ENFW @ free_parameters,
-            'prior_transform': free_parameters,
-            'all_parameters': constant_parameters,
+    return {'mean_convergence': ENFW @ free_parameters,
+            'mean_convergence_prior': free_parameters,
+            'mean_convergence_constants': constant_parameters,
             }
 
 
@@ -93,7 +93,7 @@ def get_piemd_operator(ift_lens_space, prefix, piemd_cfg):
     prior_keys = ['b', 'rs', 'center', 'q', 'theta']
     model_keys = ['_'.join((prefix, key)) for key in prior_keys]
 
-    piemd_priors = ParamatricPrior(prefix, piemd_cfg)
+    piemd_priors = prior_handler.ParamatricPrior(prefix, piemd_cfg)
     free_parameters = piemd_priors.free_parameter_operator
     constant_parameters = piemd_priors.constant_parameter_operator
 
@@ -109,7 +109,6 @@ def get_piemd_operator(ift_lens_space, prefix, piemd_cfg):
             'mean_convergence_prior': free_parameters,
             'mean_convergence_constants': constant_parameters,
             }
-
 
 
 def get_convergence_model(cfg):
@@ -152,3 +151,5 @@ if __name__ == '__main__':
     dist_lens = cfg['spaces']['lens_space']['distance']
     ift_lens_space = ift.RGSpace(npix_lens, dist_lens)
     operators = get_nfw_operator(ift_lens_space, 'nfw', cfg['priors']['lens']['nfw'])
+
+    exit()
