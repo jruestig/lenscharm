@@ -45,6 +45,10 @@ CODE STRUCTURE:
   - plot samples
 
 
+3. Perfomance boost
+  - Interpolate only on data space
+
+
 IDEAS:
 - Lens shift in Fourier-space: e^(2pi k (x-x0))
 

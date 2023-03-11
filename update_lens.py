@@ -21,10 +21,11 @@ from charm_lensing.src import shear_model
 
 from sys import exit
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("config", help="Config File", type=str, nargs='?',
-                        const=1, default='./configs/first_config.yaml')
+                        const=1, default='./configs/simon_birrer_comp.yaml')
     args = parser.parse_args()
 
     cfg_file = args.config
@@ -43,13 +44,21 @@ if __name__ == '__main__':
 
     # Space convenience
     npix_lens = cfg['spaces']['lens_space']['Npix']
+    padding_factor_lens = cfg['spaces']['lens_space']['padding_ratio']
+    npix_lens_ext = np.array(np.array(npix_lens) * padding_factor_lens, dtype=int)
     dist_lens = cfg['spaces']['lens_space']['distance']
 
     npix_source = cfg['spaces']['source_space']['Npix']
+    padding_factor_source = cfg['spaces']['source_space']['padding_ratio']
+    npix_source_ext = np.array(np.array(npix_source) * padding_factor_source, dtype=int)
     dist_source = cfg['spaces']['source_space']['distance']
 
     lens_space = cf.Space(npix_lens, dist_lens)
     source_space = cf.Space(npix_source, dist_source)
+
+    # create larger domains to avoid periodic boundary conditions
+    lens_space_ext = cf.Space(npix_lens_ext, dist_lens)
+    source_space_ext = cf.Space(npix_source_ext, dist_source)
 
     if cfg['mock']:
         real_source, d, real_convergence, real_deflection = mock_data.create_mock_data(
@@ -74,6 +83,7 @@ if __name__ == '__main__':
         'real_deflection': real_deflection if real_convergence is not None else (np.zeros_like(d),)*2,
     }
 
+
     if cfg['data_plot']:
         from matplotlib.colors import LogNorm
 
@@ -89,30 +99,30 @@ if __name__ == '__main__':
         plt.show()
 
     # SPACES
-    ift_source_space = ift.RGSpace(npix_source, dist_source)
-    ift_lens_space = ift.RGSpace(npix_lens, dist_lens)
+    ift_source_space_ext = ift.RGSpace(npix_source_ext, dist_source)
+    ift_lens_space_ext = ift.RGSpace(npix_lens_ext, dist_lens)
     ift_data_space = ift.RGSpace(d.shape, distances=dist_lens)
-    points_domain = ift.UnstructuredDomain(lens_space.xycoords.reshape(2, -1).shape)
+    points_domain = ift.UnstructuredDomain(lens_space_ext.xycoords.reshape(2, -1).shape)
 
     # Source Model
-    source_dict = source_model.source_model(cfg)
+    source_dict = source_model.source_model(cfg, ift_source_space_ext)
     source_diffuse = source_dict['source_diffuse']
 
     # Convergence Model
-    convergence_dict = convergence_models.get_convergence_model(cfg)
+    convergence_dict = convergence_models.get_convergence_model(cfg, ift_lens_space_ext)
     convergence_model = convergence_dict['full_model_convergence']
 
     # Deflection Angle Converter
-    deflection_poisson = cf.DeflectionAngle(lens_space)
+    deflection_poisson = cf.DeflectionAngle(lens_space_ext, factor=2)
     deflection_convergence = ift.JaxOperator(
-        ift_lens_space,
+        ift_lens_space_ext,
         points_domain,
         lambda x: deflection_poisson(x).reshape(2, -1)
     ) @ convergence_dict['full_model_convergence']
 
 
     # Shear Model
-    shear_dict = shear_model.get_shear_model(cfg, points_domain) # FIXME
+    shear_dict = shear_model.get_shear_model(cfg, points_domain, ift_lens_space_ext) # FIXME
     # FIXME: Move points_domain somewhere else, Make consistent with convergence model
     if shear_dict is None:
         deflection_shear = None
@@ -124,19 +134,19 @@ if __name__ == '__main__':
 
     # Lens equation / Ray casting
     upperleftcorner = np.multiply(
-        ift_source_space.shape, ift_source_space.distances).reshape(2, 1) / 2
+        ift_source_space_ext.shape, ift_source_space_ext.distances).reshape(2, 1) / 2
     lens_equation = ift.JaxOperator(
         points_domain,
         points_domain,
         lambda alpha: (upperleftcorner -
-                       ift_source_space.distances[0] / 2 +
-                       lens_space.xycoords.reshape(2, -1) -
+                       ift_source_space_ext.distances[0] / 2 +
+                       lens_space_ext.xycoords.reshape(2, -1) -
                        alpha)
     )
 
     # FULL MODEL
-    interpolator = linear_interpolation.Interpolation(ift_source_space, 'source', points_domain, 'lens')
-    Re = operators.Reshaper(interpolator.target, ift_data_space)
+    interpolator = linear_interpolation.Interpolation(ift_source_space_ext, 'source', points_domain, 'lens')
+    Re = operators.Reshaper(interpolator.target, ift_lens_space_ext)
 
     # Psf Operator
     if cfg['files']['psf_path'] is None:
@@ -147,12 +157,14 @@ if __name__ == '__main__':
         B = partial(psf_operator.PsfOperator, kernel=psf)
         ift_Psf = ift.JaxLinearOperator(ift_data_space, ift_data_space, B, domain_dtype=float)
 
+    # Mask to data space to get rid of periodic BCs
+    Mask = operators.GeomMaskOperator(ift_lens_space_ext, ift_data_space)
+    SourceMask = operators.GeomMaskOperator(ift_source_space_ext, ift.RGSpace(npix_source, dist_source))
+
     # Full model
     lens = lens_equation @ deflection_model
-    full_model = ift_Psf @ Re @ interpolator @ (
-            lens.ducktape_left('lens') +
-            source_diffuse.ducktape_left('source')
-    )
+    full_model = ift_Psf @ Mask @ Re @ interpolator
+    full_model = full_model @ (lens.ducktape_left('lens') + source_diffuse.ducktape_left('source'))
 
     if cfg['prior_samples']:
         deflection_dict = {
@@ -167,9 +179,8 @@ if __name__ == '__main__':
                 source_dict,
                 deflection_dict,
                 data_dict,
-                lens_space.extent
+                lens_space_ext.extent
             )
-
 
     # Data & Likelihood
     data = ift.makeField(ift_data_space, d)
@@ -206,7 +217,10 @@ if __name__ == '__main__':
             data=d,
             noise_scale=noise_scale,
             extent=lens_space.extent,
-            samescale=False
+            samescale=False,
+            cast_to_size=False,
+            mask=Mask,
+            source_mask=SourceMask
         )
         plotting.deflection_check(
             samples_list,
@@ -216,7 +230,8 @@ if __name__ == '__main__':
             deflection_model=deflection_model,
             deflection_data=data_dict['real_deflection'],
             convergence_data=data_dict['real_convergence'],
-            extent=lens_space.extent
+            extent=lens_space_ext.extent,
+            mask=Mask
         )
         plt.close()
 

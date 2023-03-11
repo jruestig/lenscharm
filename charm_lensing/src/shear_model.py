@@ -39,11 +39,7 @@ def get_shear_operator(ift_lens_space, prefix, shear_cfg, points_domain):
     }
 
 
-def get_shear_model(cfg, points_domain):
-    npix_lens = cfg['spaces']['lens_space']['Npix']
-    dist_lens = cfg['spaces']['lens_space']['distance']
-    ift_lens_space = ift.RGSpace(npix_lens, dist_lens)
-
+def get_shear_model(cfg, points_domain, ift_lens_space):
     shear_dict = None
     for key in cfg['priors']['lens']:
         if key.split('_')[0].lower() in ['shear']:
@@ -56,14 +52,4 @@ def get_shear_model(cfg, points_domain):
 
 
 if __name__ == '__main__':
-    from cluster_fits import Space
-    import matplotlib.pyplot as plt
-
-    coords = Space((128,)*2, 0.1).xycoords
-
-    alpha = deflection((0.1, 0.3, jnp.array((0., 0.))), coords)
-
-    fig, axes = plt.subplots(2, 1)
-    axes[0].imshow(alpha[0])
-    axes[1].imshow(alpha[1])
-    plt.show()
+    pass

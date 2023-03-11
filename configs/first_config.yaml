@@ -7,14 +7,16 @@ data_plot: False
 
 spaces:
   lens_space:
+    padding_ratio: 1.5
     Npix:
       - 128
       - 128
     distance:
       - 0.05
       - 0.05
-    zeropadding: 4
+
   source_space:
+    padding_ratio: 1.5
     Npix:
       - 128
       - 128
