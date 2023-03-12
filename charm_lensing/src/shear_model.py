@@ -19,7 +19,7 @@ def get_shear_operator(ift_lens_space, prefix, shear_cfg, points_domain):
     prior_keys = ['strength', 'theta', 'center']
     model_keys = ['_'.join((prefix, key)) for key in prior_keys]
 
-    priors = prior_handler.ParamatricPrior(prefix, shear_cfg)
+    priors = prior_handler.ParametricPriorHandler(prefix, shear_cfg)
     free_parameters = priors.free_parameter_operator
     constant_parameters = priors.constant_parameter_operator
 

@@ -82,7 +82,7 @@ def get_operator(ift_lens_space, prefix, model_cfg, model_type):
 
     model_keys = ['_'.join((prefix, key)) for key in prior_keys]
 
-    model_priors = prior_handler.ParamatricPrior(prefix, model_cfg)
+    model_priors = prior_handler.ParametricPriorHandler(prefix, model_cfg)
     free_parameters = model_priors.free_parameter_operator
     constant_parameters = model_priors.constant_parameter_operator
 
