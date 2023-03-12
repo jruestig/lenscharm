@@ -11,6 +11,16 @@ from charm_lensing.src import prior_handler
 
 from sys import exit
 
+
+def rotation(grid, theta):
+    """
+    Rotates the passed coordinates anticlockwise by an angle theta
+    """
+    x = grid[0] * jnp.cos(theta) - grid[1] * jnp.sin(theta)
+    y = grid[0] * jnp.sin(theta) + grid[1] * jnp.cos(theta)
+    return x, y
+
+
 @custom_jvp
 def F(x):
     def bigger(x):
@@ -35,15 +45,6 @@ def F_jvp(primals, tangents):
     return primal_out, tangent_out * x_dot
 
 
-def rotation(grid, theta):
-    """
-    Rotates the passed coordinates anticlockwise by an angle theta
-    """
-    x = grid[0] * jnp.cos(theta) - grid[1] * jnp.sin(theta)
-    y = grid[0] * jnp.sin(theta) + grid[1] * jnp.cos(theta)
-    return x, y
-
-
 def nfw_convergence(params, coords): #
     # convergence field (Keeton 2002 eq. 55)
     b, rs, center, theta, q = params
@@ -55,60 +56,47 @@ def nfw_convergence(params, coords): #
     return jnp.log(2*b*(1-F(x))/(x**2-1))
 
 
-def get_nfw_operator(ift_lens_space, prefix, nfw_cfg):
-    coords = Space(ift_lens_space.shape, ift_lens_space.distances).xycoords
-
-    prior_keys = ['b', 'rs', 'center', 'theta', 'q']
-    model_keys = ['_'.join((prefix, key)) for key in prior_keys]
-
-    nfw_priors = prior_handler.ParamatricPrior(prefix, nfw_cfg)
-    free_parameters = nfw_priors.free_parameter_operator
-    constant_parameters = nfw_priors.constant_parameter_operator
-
-    ENFW = ift.JaxOperator(
-        free_parameters.target,
-        ift_lens_space,
-        lambda x: nfw_convergence(
-            (constant_parameters(x)[key] for key in model_keys),
-            coords
-        ))
-
-    return {'mean_convergence': ENFW @ free_parameters,
-            'mean_convergence_prior': free_parameters,
-            'mean_convergence_constants': constant_parameters,
-            }
-
-
 def piemd_convergence(params, coords):
-    b, rs, center, q, theta = params
+    b, rs, center, theta, q = params
 
     f, bc = 1/q, rs/q
     x, y = rotation((coords[0]-center[0], coords[1]-center[1]), theta)
     return jnp.log(b*jnp.sqrt(f)/(2*jnp.sqrt(x**2+f**2*y**2+bc**2)))
 
 
-def get_piemd_operator(ift_lens_space, prefix, piemd_cfg):
+def get_operator(ift_lens_space, prefix, model_cfg, model_type):
     coords = Space(ift_lens_space.shape, ift_lens_space.distances).xycoords
 
-    prior_keys = ['b', 'rs', 'center', 'q', 'theta']
+    if model_type == 'nfw':
+        prior_keys = ['b', 'rs', 'center', 'theta', 'q']
+        function = nfw_convergence
+    elif model_type == 'piemd':
+        prior_keys = ['b', 'rs', 'center', 'theta', 'q']
+        function = piemd_convergence
+    else:
+        raise ValueError(f"Invalid model type '{model_type}', must be 'nfw' or 'piemd'")
+
+    # Check that model_cfg contains all prior keys
+    if not all(key in model_cfg for key in prior_keys):
+        raise ValueError(f"The lens model does not contain all required the prior keys: {prior_keys}")
+
     model_keys = ['_'.join((prefix, key)) for key in prior_keys]
 
-    piemd_priors = prior_handler.ParamatricPrior(prefix, piemd_cfg)
-    free_parameters = piemd_priors.free_parameter_operator
-    constant_parameters = piemd_priors.constant_parameter_operator
+    model_priors = prior_handler.ParamatricPrior(prefix, model_cfg)
+    free_parameters = model_priors.free_parameter_operator
+    constant_parameters = model_priors.constant_parameter_operator
 
-    PIEMD = ift.JaxOperator(
+    MODEL = ift.JaxOperator(
         free_parameters.target,
         ift_lens_space,
-        lambda x: piemd_convergence(
+        lambda x: function(
             (constant_parameters(x)[key] for key in model_keys),
             coords
         ))
 
-    return {'mean_convergence': PIEMD @ free_parameters,
+    return {'mean_convergence': MODEL @ free_parameters,
             'mean_convergence_prior': free_parameters,
-            'mean_convergence_constants': constant_parameters,
-            }
+            'mean_convergence_constants': constant_parameters}
 
 
 def get_convergence_model(cfg):
@@ -125,13 +113,10 @@ def get_convergence_model(cfg):
     # FIXME: Works only for one NFW profile
     for key in cfg['priors']['lens']:
         if key.split('_')[0].lower() in ['nfw']:
-            res = get_nfw_operator(
-                ift_lens_space, key, cfg['priors']['lens'][key])
+            res = get_operator(ift_lens_space, key, cfg['priors']['lens'][key], 'nfw')
 
         elif key.split('_')[0].lower() in ['piemd']:
-            res = get_piemd_operator(
-                ift_lens_space, key, cfg['priors']['lens'][key]
-            )
+            res = get_operator(ift_lens_space, key, cfg['priors']['lens'][key], 'piemd')
 
     res['full_model_convergence'] = (res['mean_convergence'] + perturbations_convergence).exp()
     res['perturbations_convergence'] = perturbations_convergence
@@ -150,6 +135,6 @@ if __name__ == '__main__':
     npix_lens = cfg['spaces']['lens_space']['Npix']
     dist_lens = cfg['spaces']['lens_space']['distance']
     ift_lens_space = ift.RGSpace(npix_lens, dist_lens)
-    operators = get_nfw_operator(ift_lens_space, 'nfw', cfg['priors']['lens']['nfw'])
+    mean_model = get_operator(ift_lens_space, 'piemd', cfg['priors']['lens']['piemd'], 'piemd')
 
     exit()
