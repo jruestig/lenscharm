@@ -2,11 +2,7 @@ import nifty8 as ift
 from .operators import jax_gaussian
 
 
-def source_model(cfg):
-    npix_source = cfg['spaces']['source_space']['Npix']
-    dist_source = cfg['spaces']['source_space']['distance']
-    ift_source_space = ift.RGSpace(npix_source, dist_source)
-
+def source_model(cfg, ift_source_space):
     source_center_key = cfg['priors']['source']['center']['key']
     source_covariance_key = cfg['priors']['source']['covariance']['key']
     source_off_diagonal_key = cfg['priors']['source']['off_diagonal']['key']
