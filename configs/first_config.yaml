@@ -1,9 +1,11 @@
 mock: True
-outputdir: 'output/fullmodel/freepiemd_shear'
+outputdir: 'output/fullmodel/bigger_space'
 seed: 42
-prior_samples: True
 calculate_elbo: False
+
+prior_samples: False
 data_plot: False
+samples_plotting: True
 
 spaces:
   lens_space:

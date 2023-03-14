@@ -127,7 +127,6 @@ def Ls_check(
     dfield = forward_model(mean).val
 
     if mask is not None:
-        print(source_reconstruction.shape)
         res = source_mask(ift.makeField(source_mask.domain, source_reconstruction)).val
 
         xycoord = np.linspace(0, 1, num=res.shape[0])
@@ -137,7 +136,7 @@ def Ls_check(
         xycoordnew = np.linspace(0, 1, num=true_source.shape[0])
         source_reconstruction = Recaster(*(xycoordnew,) * 2, grid=True) * (
                 res.shape[0] / true_source.shape[0]
-        ) ** 2  / 4 # FIXME: This 4 should not be there
+        ) ** 2  # / 4 # FIXME: This 4 should not be there
 
     res = true_source - source_reconstruction
 
@@ -149,21 +148,12 @@ def Ls_check(
 
     fig, axes = plt.subplots(2, 3, figsize=(19, 10))
     ims = np.zeros_like(axes)
-    ims[0, 0] = axes[0, 0].imshow(
-        true_source, origin='lower', vmin=0, vmax=source_max, extent=extent)
-    ims[0, 1] = axes[0, 1].imshow(
-        source_reconstruction, origin='lower', vmin=0, vmax=source_max,
-        extent=extent)
-    ims[0, 2] = axes[0, 2].imshow(
-        res,
-        origin='lower', extent=extent)
-    ims[1, 0] = axes[1, 0].imshow(
-        data, vmin=-0.10, origin='lower', vmax=data.max(), extent=extent)
-    ims[1, 1] = axes[1, 1].imshow(
-        dfield, vmin=-0.10, origin='lower', vmax=data.max(), extent=extent)
-    ims[1, 2] = axes[1, 2].imshow(
-        (data-dfield)/noise_scale,
-        vmin=-3, vmax=3, origin='lower', cmap='RdBu_r', extent=extent)
+    ims[0, 0] = axes[0, 0].imshow(true_source, origin='lower', vmin=0, vmax=source_max, extent=extent)
+    ims[0, 1] = axes[0, 1].imshow(source_reconstruction, origin='lower', vmin=0, vmax=source_max, extent=extent)
+    ims[0, 2] = axes[0, 2].imshow(res, origin='lower', extent=extent, cmap='RdBu_r')
+    ims[1, 0] = axes[1, 0].imshow(data, vmin=-0.10, origin='lower', vmax=data.max(), extent=extent)
+    ims[1, 1] = axes[1, 1].imshow(dfield, vmin=-0.10, origin='lower', vmax=data.max(), extent=extent)
+    ims[1, 2] = axes[1, 2].imshow((data-dfield)/noise_scale, vmin=-3, vmax=3, origin='lower', cmap='RdBu_r', extent=extent)
     axes[0, 0].set_title('source')
     axes[0, 1].set_title('rec')
     axes[0, 2].set_title('(source - rec)/std')
@@ -176,7 +166,7 @@ def Ls_check(
     if outputdir is None:
         plt.show()
     else:
-        plt.savefig(f'{outputdir}/gauss_KL_{ii}.png')
+        plt.savefig(f'{outputdir}/Ls_KL_{ii}.png')
     plt.close()
 
 
@@ -260,3 +250,47 @@ def prior_samples_plotting(
 
     plt.show()
     plt.close()
+
+
+def sample_plotter(
+        sample_id,
+        kl_iteration,
+        sample,
+        outputdir,
+        source_model,
+        full_model,
+        convergence_model,
+        deflection_model,
+        noise_scale,
+        data):
+
+    source_reconstruction = source_model.force(sample).val.T
+    bls_reconstruction = full_model(sample).val
+
+    convergence = convergence_model.force(sample).val
+    deflection_field = deflection_model.force(sample).val.reshape(
+        2, *convergence.shape
+    )
+
+    fig, axes = plt.subplots(2, 3, figsize=(19, 10))
+    ims = np.zeros_like(axes)
+    ims[0, 0] = axes[0, 0].imshow(
+        source_reconstruction, origin='lower', vmin=0)
+    ims[0, 1] = axes[0, 1].imshow(convergence, origin='lower', cmap='RdYlBu_r')
+    ims[0, 2] = axes[0, 2].imshow(np.hypot(*deflection_field), origin='lower')
+    ims[1, 0] = axes[1, 0].imshow(data, vmin=-0.10, origin='lower', vmax=data.max())
+    ims[1, 1] = axes[1, 1].imshow(bls_reconstruction, vmin=-0.10, origin='lower', vmax=data.max())
+    ims[1, 2] = axes[1, 2].imshow((data-bls_reconstruction)/noise_scale, vmin=-3, vmax=3, origin='lower', cmap='RdBu_r')
+    axes[0, 0].set_title('source reconstruction')
+    axes[0, 1].set_title('convergence model')
+    axes[0, 2].set_title('deflection model')
+    axes[1, 0].set_title('data')
+    axes[1, 1].set_title('BLs')
+    axes[1, 2].set_title('(data - BLs)/noisescale')
+    for im, ax in zip(ims.flatten(), axes.flatten()):
+        plt.colorbar(im, ax=ax)
+    plt.tight_layout()
+    if outputdir is None:
+        plt.show()
+    else:
+        plt.savefig(f'{outputdir}/sample{sample_id}_KL_{kl_iteration}.png')

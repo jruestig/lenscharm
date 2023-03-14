@@ -1,7 +1,7 @@
 import argparse
 from functools import partial
 from os import makedirs
-from os.path import join
+from os.path import join, exists
 
 import cluster_fits as cf
 import matplotlib.pyplot as plt
@@ -25,7 +25,7 @@ from sys import exit
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("config", help="Config File", type=str, nargs='?',
-                        const=1, default='./configs/simon_birrer_comp.yaml')
+                        const=1, default='./configs/first_config.yaml')
     args = parser.parse_args()
 
     cfg_file = args.config
@@ -76,6 +76,7 @@ if __name__ == '__main__':
         real_convergence = None
         real_deflection = None
 
+
     data_dict = {
         'real_data': d,
         'real_source': real_source if real_source is not None else np.zeros_like(d),
@@ -83,10 +84,7 @@ if __name__ == '__main__':
         'real_deflection': real_deflection if real_convergence is not None else (np.zeros_like(d),)*2,
     }
 
-
     if cfg['data_plot']:
-        from matplotlib.colors import LogNorm
-
         snrmask = (psf_operator.PsfOperator(d, utils.smoother) > 2 * noise_scale)
         SNR = d[snrmask].sum() / (noise_scale * np.sqrt(snrmask.sum()))
 
@@ -204,12 +202,11 @@ if __name__ == '__main__':
     else:
         nonlinear_sampling = None
 
-
-    def plot_check(samples_list, ii):
-        print(f'Plotting iteration {ii} in {outputdir}\n')
+    def plot_check(samples_list, kl_iteration):
+        print(f'Plotting iteration {kl_iteration} in {outputdir}\n')
         plotting.Ls_check(
             samples_list,
-            ii,
+            kl_iteration,
             outputdir=outputdir,
             source_model=source_diffuse,
             forward_model=full_model,
@@ -217,14 +214,14 @@ if __name__ == '__main__':
             data=d,
             noise_scale=noise_scale,
             extent=lens_space.extent,
-            samescale=False,
+            samescale=True,
             cast_to_size=False,
             mask=Mask,
             source_mask=SourceMask
         )
         plotting.deflection_check(
             samples_list,
-            ii,
+            kl_iteration,
             outputdir=outputdir,
             convergence_model=convergence_model,
             deflection_model=deflection_model,
@@ -233,8 +230,25 @@ if __name__ == '__main__':
             extent=lens_space_ext.extent,
             mask=Mask
         )
-        plt.close()
 
+        if cfg['samples_plotting']:
+            samples_output_dir = join(outputdir, f'samples_{kl_iteration}')
+            if not exists(samples_output_dir):
+                makedirs(samples_output_dir)
+
+            for sample_id, sample in enumerate(samples_list.iterator()):
+                plotting.sample_plotter(
+                    sample_id,
+                    kl_iteration,
+                    sample,
+                    samples_output_dir,
+                    source_model=source_diffuse,
+                    full_model=full_model,
+                    convergence_model=convergence_model,
+                    deflection_model=deflection_model,
+                    noise_scale=noise_scale,
+                    data=d)
+                plt.close()
 
     ic_newton = ift.AbsDeltaEnergyController(**cfg['minimization']['ic_newton'])
     minimizer = ift.NewtonCG(ic_newton)
